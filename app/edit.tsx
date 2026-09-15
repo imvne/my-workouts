@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { DownloadIcon } from '@/components/ui/DownloadIcon';
@@ -53,6 +54,7 @@ function resizeSessions(program: Program, count: number): Program {
 
 export default function EditProgram() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const saved = useProgramStore((s) => s.program);
   const saveProgram = useProgramStore((s) => s.saveProgram);
   const progress = useProgramStore((s) => s.progress);
@@ -272,7 +274,7 @@ export default function EditProgram() {
         </Pressable>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
         <Button title="Valider ma prog" onPress={onSave} />
       </View>
     </KeyboardAvoidingView>
@@ -506,7 +508,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: spacing.md,
-    paddingBottom: spacing.lg,
     backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.border,

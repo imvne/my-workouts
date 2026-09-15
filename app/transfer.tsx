@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
@@ -25,6 +26,7 @@ function notify(title: string, message: string) {
 
 export default function Transfer() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const program = useProgramStore((s) => s.program);
   const progress = useProgramStore((s) => s.progress);
   const importProgram = useProgramStore((s) => s.importProgram);
@@ -112,7 +114,7 @@ export default function Transfer() {
         />
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
         <Button
           title="Importer ce texte"
           variant={canUseFiles ? 'ghost' : 'primary'}
@@ -148,7 +150,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: spacing.md,
-    paddingBottom: spacing.lg,
     backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.border,

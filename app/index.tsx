@@ -128,7 +128,7 @@ export default function Home() {
       : sessions[sessionIndex + 1].title;
 
   return (
-    <View style={[styles.screen, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+    <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
       <Stack.Screen options={{ headerLeft, headerRight }} />
       {menu}
 

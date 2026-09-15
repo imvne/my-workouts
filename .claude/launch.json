@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "expo-web",
+      "runtimeExecutable": "/Users/imane/.nvm/versions/node/v22.20.0/bin/node",
+      "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web", "--port", "8090"],
+      "port": 8090
+    }
+  ]
+}

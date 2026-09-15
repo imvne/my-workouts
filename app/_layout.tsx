@@ -70,7 +70,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen name="index" options={{ title: 'Autocoaching' }} />
+        <Stack.Screen name="index" options={{ title: '' }} />
         <Stack.Screen name="edit" options={{ title: 'Ma prog', presentation: 'modal' }} />
         <Stack.Screen name="transfer" options={{ title: 'Sauvegarder / importer' }} />
         <Stack.Screen name="(athlete)" options={{ headerShown: false }} />

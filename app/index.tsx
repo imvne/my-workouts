@@ -211,7 +211,7 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  burger: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, gap: 4 },
+  burger: { marginLeft: spacing.md, paddingVertical: spacing.sm, gap: 4 },
   burgerBar: { width: 20, height: 2, borderRadius: 1, backgroundColor: colors.text },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(74, 59, 54, 0.35)' },
   menuPanel: {
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   menuItemText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.text },
   menuCheck: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
 
-  editBtn: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  editBtn: { marginRight: spacing.md, paddingVertical: spacing.xs },
   editText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
 
   empty: {

@@ -336,8 +336,8 @@ function NumberField({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  headerBtns: { flexDirection: 'row', gap: spacing.xs },
-  headerBtn: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  headerBtns: { flexDirection: 'row', gap: spacing.md, marginRight: spacing.md },
+  headerBtn: { paddingVertical: spacing.xs },
   textLink: { alignItems: 'center', paddingVertical: spacing.xs },
   textLinkLabel: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.pinkDeep },
   content: {

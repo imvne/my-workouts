@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { difficultyFor, normalizeProgram, useProgramStore } from '@/store/programStore';
 import type { ProgramProgress } from '@/types/program';
@@ -50,9 +51,20 @@ export default function Position() {
     return 'current';
   };
 
-  const jump = (p: ProgramProgress) => {
-    setProgress(p);
-    router.back();
+  // Position juste après `p` (série suivante, sinon exo, séance, semaine). Fin du bloc : on reste.
+  const after = (p: ProgramProgress): ProgramProgress => {
+    const ex = sessions[p.session].exercises[p.exercise];
+    if (p.set + 1 < ex.sets) return { ...p, set: p.set + 1 };
+    if (p.exercise + 1 < sessions[p.session].exercises.length)
+      return { ...p, exercise: p.exercise + 1, set: 0 };
+    if (p.session + 1 < sessions.length) return { ...p, session: p.session + 1, exercise: 0, set: 0 };
+    if (p.week + 1 <= program.weeks) return { week: p.week + 1, session: 0, exercise: 0, set: 0 };
+    return p;
+  };
+
+  // Cocher = tout ce qui est jusqu'à `end` est fait ; décocher = on reprend à `start`.
+  const toggle = (start: ProgramProgress, end: ProgramProgress, status: Status) => {
+    setProgress(status === 'done' ? start : after(end));
   };
 
   const lastOf = (week: number, session: number, exercise?: number): ProgramProgress => {
@@ -65,9 +77,7 @@ export default function Position() {
     <ScrollView
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
     >
-      <Text style={styles.hint}>
-        Touche le rond pour reprendre à cet endroit, le nom pour déplier.
-      </Text>
+      <Text style={styles.hint}>Coche ce qui est fait, décoche pour y revenir. Le nom déplie.</Text>
 
       {Array.from({ length: program.weeks }, (_, wi) => wi + 1).map((week) => {
         const weekStart = { week, session: 0, exercise: 0, set: 0 };
@@ -83,7 +93,7 @@ export default function Position() {
               open={wOpen}
               level={0}
               onToggle={() => setOpenWeek(wOpen ? null : week)}
-              onJump={() => jump(weekStart)}
+              onToggleDone={() => toggle(weekStart, weekEnd, wStatus)}
             />
 
             {wOpen &&
@@ -102,7 +112,7 @@ export default function Position() {
                       open={sOpen}
                       level={1}
                       onToggle={() => setOpenSession(sOpen ? null : sKey)}
-                      onJump={() => jump(sStart)}
+                      onToggleDone={() => toggle(sStart, sEnd, sStatus)}
                     />
 
                     {sOpen &&
@@ -122,7 +132,7 @@ export default function Position() {
                               open={eOpen}
                               level={2}
                               onToggle={() => setOpenExercise(eOpen ? null : eKey)}
-                              onJump={() => jump(eStart)}
+                              onToggleDone={() => toggle(eStart, eEnd, eStatus)}
                             />
 
                             {eOpen && (
@@ -133,7 +143,7 @@ export default function Position() {
                                   return (
                                     <Pressable
                                       key={k}
-                                      onPress={() => jump(p)}
+                                      onPress={() => toggle(p, p, st)}
                                       style={[
                                         styles.setPill,
                                         st === 'done' && styles.setPillDone,
@@ -163,6 +173,8 @@ export default function Position() {
           </View>
         );
       })}
+
+      <Button title="Retour à la séance" onPress={() => router.back()} style={styles.back} />
     </ScrollView>
   );
 }
@@ -174,7 +186,7 @@ function Row({
   open,
   level,
   onToggle,
-  onJump,
+  onToggleDone,
 }: {
   label: string;
   sub?: string;
@@ -182,14 +194,16 @@ function Row({
   open: boolean;
   level: 0 | 1 | 2;
   onToggle: () => void;
-  onJump: () => void;
+  onToggleDone: () => void;
 }) {
   return (
     <View style={[styles.row, { paddingLeft: spacing.md + level * spacing.lg }]}>
       <Pressable
         hitSlop={8}
-        onPress={onJump}
-        accessibilityLabel={`Reprendre à ${label}`}
+        onPress={onToggleDone}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: status === 'done' }}
+        accessibilityLabel={label}
         style={[
           styles.check,
           status === 'done' && styles.checkDone,
@@ -224,6 +238,7 @@ function Row({
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.sm },
+  back: { marginTop: spacing.md },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { fontFamily: fonts.body, color: colors.textMuted },
   hint: {

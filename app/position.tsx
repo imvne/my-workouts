@@ -5,35 +5,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
-import { difficultyFor, normalizeProgram, useProgramStore } from '@/store/programStore';
+import { difficultyFor, doneKey, normalizeProgram, useProgramStore } from '@/store/programStore';
 import type { ProgramProgress } from '@/types/program';
-
-type Status = 'done' | 'current' | 'todo';
-
-/** Ordre linéaire d'une position dans le bloc. */
-function rank(p: ProgramProgress) {
-  return [p.week, p.session, p.exercise, p.set] as const;
-}
-
-function compare(a: ProgramProgress, b: ProgramProgress): number {
-  const ra = rank(a);
-  const rb = rank(b);
-  for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
-  return 0;
-}
 
 export default function Position() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const rawProgram = useProgramStore((s) => s.program);
   const progress = useProgramStore((s) => s.progress);
+  const done = useProgramStore((s) => s.done);
   const setProgress = useProgramStore((s) => s.setProgress);
+  const setDone = useProgramStore((s) => s.setDone);
 
   const program = rawProgram ? normalizeProgram(rawProgram) : null;
   const sessions = program?.sessions.filter((s) => s.exercises.length > 0) ?? [];
 
   const [openWeek, setOpenWeek] = useState<number | null>(progress.week);
-  const [openSession, setOpenSession] = useState<string | null>(`${progress.week}-${progress.session}`);
+  const [openSession, setOpenSession] = useState<string | null>(
+    `${progress.week}-${progress.session}`,
+  );
   const [openExercise, setOpenExercise] = useState<string | null>(null);
 
   if (!program || sessions.length === 0) {
@@ -44,34 +34,49 @@ export default function Position() {
     );
   }
 
-  // Statut d'un nœud : comparé à la position courante, sur son premier et dernier élément.
-  const statusOf = (start: ProgramProgress, end: ProgramProgress): Status => {
-    if (compare(end, progress) < 0) return 'done';
-    if (compare(start, progress) > 0) return 'todo';
-    return 'current';
-  };
+  const keysOf = (week: number, si: number, ei?: number) =>
+    (ei == null ? sessions[si].exercises : [sessions[si].exercises[ei]]).map((e) =>
+      doneKey(week, sessions[si].id, e.id),
+    );
+  const keysOfWeek = (week: number) => sessions.flatMap((_, si) => keysOf(week, si));
+  const allDone = (keys: string[]) => keys.length > 0 && keys.every((k) => done[k]);
 
-  // Position juste après `p` (série suivante, sinon exo, séance, semaine). Fin du bloc : on reste.
-  const after = (p: ProgramProgress): ProgramProgress => {
-    const ex = sessions[p.session].exercises[p.exercise];
-    if (p.set + 1 < ex.sets) return { ...p, set: p.set + 1 };
+  // Position à reprendre : juste après le dernier exo coché dans l'ordre chronologique.
+  const recomputeProgress = (nextDone: Record<string, true>) => {
+    let last: ProgramProgress | null = null;
+    for (let week = 1; week <= program.weeks; week++) {
+      sessions.forEach((s, si) => {
+        s.exercises.forEach((e, ei) => {
+          if (nextDone[doneKey(week, s.id, e.id)]) last = { week, session: si, exercise: ei, set: 0 };
+        });
+      });
+    }
+    if (!last) return setProgress({ week: 1, session: 0, exercise: 0, set: 0 });
+    const p: ProgramProgress = last;
     if (p.exercise + 1 < sessions[p.session].exercises.length)
-      return { ...p, exercise: p.exercise + 1, set: 0 };
-    if (p.session + 1 < sessions.length) return { ...p, session: p.session + 1, exercise: 0, set: 0 };
-    if (p.week + 1 <= program.weeks) return { week: p.week + 1, session: 0, exercise: 0, set: 0 };
-    return p;
+      return setProgress({ ...p, exercise: p.exercise + 1 });
+    if (p.session + 1 < sessions.length)
+      return setProgress({ ...p, session: p.session + 1, exercise: 0 });
+    if (p.week + 1 <= program.weeks)
+      return setProgress({ week: p.week + 1, session: 0, exercise: 0, set: 0 });
+    setProgress({ ...p, set: sessions[p.session].exercises[p.exercise].sets - 1 });
   };
 
-  // Cocher = tout ce qui est jusqu'à `end` est fait ; décocher = on reprend à `start`.
-  const toggle = (start: ProgramProgress, end: ProgramProgress, status: Status) => {
-    setProgress(status === 'done' ? start : after(end));
+  const toggle = (keys: string[]) => {
+    const value = !allDone(keys);
+    setDone(keys, value);
+    const next = { ...done };
+    for (const k of keys) {
+      if (value) next[k] = true;
+      else delete next[k];
+    }
+    recomputeProgress(next);
   };
 
-  const lastOf = (week: number, session: number, exercise?: number): ProgramProgress => {
-    const s = sessions[session];
-    const ei = exercise ?? s.exercises.length - 1;
-    return { week, session, exercise: ei, set: s.exercises[ei].sets - 1 };
-  };
+  const isCurrent = (week: number, si?: number, ei?: number) =>
+    progress.week === week &&
+    (si == null || progress.session === si) &&
+    (ei == null || progress.exercise === ei);
 
   return (
     <ScrollView
@@ -80,27 +85,24 @@ export default function Position() {
       <Text style={styles.hint}>Coche ce qui est fait, décoche pour y revenir. Le nom déplie.</Text>
 
       {Array.from({ length: program.weeks }, (_, wi) => wi + 1).map((week) => {
-        const weekStart = { week, session: 0, exercise: 0, set: 0 };
-        const weekEnd = lastOf(week, sessions.length - 1);
-        const wStatus = statusOf(weekStart, weekEnd);
+        const wKeys = keysOfWeek(week);
         const wOpen = openWeek === week;
 
         return (
           <View key={week} style={styles.week}>
             <Row
               label={`Semaine ${week}`}
-              status={wStatus}
+              checked={allDone(wKeys)}
+              current={isCurrent(week)}
               open={wOpen}
               level={0}
               onToggle={() => setOpenWeek(wOpen ? null : week)}
-              onToggleDone={() => toggle(weekStart, weekEnd, wStatus)}
+              onCheck={() => toggle(wKeys)}
             />
 
             {wOpen &&
               sessions.map((session, si) => {
-                const sStart = { week, session: si, exercise: 0, set: 0 };
-                const sEnd = lastOf(week, si);
-                const sStatus = statusOf(sStart, sEnd);
+                const sKeys = keysOf(week, si);
                 const sKey = `${week}-${si}`;
                 const sOpen = openSession === sKey;
 
@@ -108,18 +110,19 @@ export default function Position() {
                   <View key={session.id}>
                     <Row
                       label={session.title}
-                      status={sStatus}
+                      checked={allDone(sKeys)}
+                      current={isCurrent(week, si)}
                       open={sOpen}
                       level={1}
                       onToggle={() => setOpenSession(sOpen ? null : sKey)}
-                      onToggleDone={() => toggle(sStart, sEnd, sStatus)}
+                      onCheck={() => toggle(sKeys)}
                     />
 
                     {sOpen &&
                       session.exercises.map((exercise, ei) => {
-                        const eStart = { week, session: si, exercise: ei, set: 0 };
-                        const eEnd = lastOf(week, si, ei);
-                        const eStatus = statusOf(eStart, eEnd);
+                        const eKeys = keysOf(week, si, ei);
+                        const eDone = allDone(eKeys);
+                        const eCurrent = isCurrent(week, si, ei);
                         const eKey = `${sKey}-${ei}`;
                         const eOpen = openExercise === eKey;
 
@@ -128,31 +131,35 @@ export default function Position() {
                             <Row
                               label={exercise.name}
                               sub={difficultyFor(exercise, week)}
-                              status={eStatus}
+                              checked={eDone}
+                              current={eCurrent}
                               open={eOpen}
                               level={2}
                               onToggle={() => setOpenExercise(eOpen ? null : eKey)}
-                              onToggleDone={() => toggle(eStart, eEnd, eStatus)}
+                              onCheck={() => toggle(eKeys)}
                             />
 
                             {eOpen && (
                               <View style={styles.sets}>
                                 {Array.from({ length: exercise.sets }, (_, k) => {
-                                  const p = { week, session: si, exercise: ei, set: k };
-                                  const st = statusOf(p, p);
+                                  const setDoneHere = eDone || (eCurrent && k < progress.set);
                                   return (
                                     <Pressable
                                       key={k}
-                                      onPress={() => toggle(p, p, st)}
-                                      style={[styles.setPill, st === 'done' && styles.setPillDone]}
+                                      onPress={() => {
+                                        // Reprendre à cette série : l'exo redevient « en cours ».
+                                        setDone(eKeys, false);
+                                        setProgress({ week, session: si, exercise: ei, set: k });
+                                      }}
+                                      style={[styles.setPill, setDoneHere && styles.setPillDone]}
                                     >
                                       <Text
                                         style={[
                                           styles.setPillText,
-                                          st === 'done' && styles.setPillTextDone,
+                                          setDoneHere && styles.setPillTextDone,
                                         ]}
                                       >
-                                        {st === 'done' ? '✓' : k + 1}
+                                        {setDoneHere ? '✓' : k + 1}
                                       </Text>
                                     </Pressable>
                                   );
@@ -181,38 +188,40 @@ export default function Position() {
 function Row({
   label,
   sub,
-  status,
+  checked,
+  current,
   open,
   level,
   onToggle,
-  onToggleDone,
+  onCheck,
 }: {
   label: string;
   sub?: string;
-  status: Status;
+  checked: boolean;
+  current: boolean;
   open: boolean;
   level: 0 | 1 | 2;
   onToggle: () => void;
-  onToggleDone: () => void;
+  onCheck: () => void;
 }) {
   return (
     <View style={[styles.row, { paddingLeft: spacing.md + level * spacing.lg }]}>
       <Pressable
         hitSlop={8}
-        onPress={onToggleDone}
+        onPress={onCheck}
         accessibilityRole="checkbox"
-        accessibilityState={{ checked: status === 'done' }}
+        accessibilityState={{ checked }}
         accessibilityLabel={label}
-        style={[styles.check, status === 'done' && styles.checkDone]}
+        style={[styles.check, checked && styles.checkDone]}
       >
-        {status === 'done' && <Text style={styles.checkMark}>✓</Text>}
+        {checked && <Text style={styles.checkMark}>✓</Text>}
       </Pressable>
       <Pressable onPress={onToggle} style={styles.rowLabel}>
         <Text
           style={[
             level === 0 ? styles.labelL0 : level === 1 ? styles.labelL1 : styles.labelL2,
-            status === 'todo' && styles.labelTodo,
-            status === 'current' && styles.labelCurrent,
+            !checked && !current && styles.labelTodo,
+            current && !checked && styles.labelCurrent,
           ]}
           numberOfLines={1}
         >

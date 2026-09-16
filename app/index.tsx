@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
-import { difficultyFor, normalizeProgram, useProgramStore } from '@/store/programStore';
+import { difficultyFor, doneKey, normalizeProgram, useProgramStore } from '@/store/programStore';
 
 export default function Home() {
   const router = useRouter();
@@ -13,6 +13,7 @@ export default function Home() {
   const program = rawProgram ? normalizeProgram(rawProgram) : null;
   const progress = useProgramStore((s) => s.progress);
   const setProgress = useProgramStore((s) => s.setProgress);
+  const setDone = useProgramStore((s) => s.setDone);
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
@@ -117,7 +118,10 @@ export default function Home() {
   const goNext = () => {
     if (!isLastSet) {
       setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex + 1 });
-    } else if (!isLastExercise) {
+      return;
+    }
+    setDone([doneKey(progress.week, session.id, current.id)], true);
+    if (!isLastExercise) {
       setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex + 1, set: 0 });
     } else if (!isLastSession) {
       setProgress({ ...progress, session: sessionIndex + 1, exercise: 0, set: 0 });

@@ -29,9 +29,10 @@ export default function Transfer() {
   const insets = useSafeAreaInsets();
   const program = useProgramStore((s) => s.program);
   const progress = useProgramStore((s) => s.progress);
+  const done = useProgramStore((s) => s.done);
   const importProgram = useProgramStore((s) => s.importProgram);
 
-  const [text, setText] = useState(() => (program ? programToCsv(program, progress) : ''));
+  const [text, setText] = useState(() => (program ? programToCsv(program, progress, done) : ''));
   const [copied, setCopied] = useState(false);
 
   const onCopy = async () => {
@@ -48,7 +49,7 @@ export default function Transfer() {
   const importText = (source: string) => {
     try {
       const parsed = csvToProgram(source);
-      importProgram(parsed.program, parsed.progress);
+      importProgram(parsed.program, parsed.progress, parsed.done);
       router.dismissTo('/');
     } catch (e) {
       notify('Import impossible', e instanceof Error ? e.message : String(e));

@@ -58,6 +58,7 @@ export default function EditProgram() {
   const saved = useProgramStore((s) => s.program);
   const saveProgram = useProgramStore((s) => s.saveProgram);
   const progress = useProgramStore((s) => s.progress);
+  const done = useProgramStore((s) => s.done);
   const importProgram = useProgramStore((s) => s.importProgram);
 
   const [program, setProgram] = useState<Program>(() =>
@@ -95,7 +96,7 @@ export default function EditProgram() {
 
   const onExport = () => {
     if (!canUseFiles) return router.push('/transfer');
-    downloadCsv(programToCsv(program, progress));
+    downloadCsv(programToCsv(program, progress, done));
   };
 
   const onImportFile = async () => {
@@ -104,7 +105,7 @@ export default function EditProgram() {
     if (!content) return;
     try {
       const parsed = csvToProgram(content);
-      importProgram(parsed.program, parsed.progress);
+      importProgram(parsed.program, parsed.progress, parsed.done);
       // L'éditeur garde sa copie locale : on la remplace pour ne pas réécrire l'ancienne prog.
       const fresh = normalizeProgram(parsed.program);
       setProgram(fresh);

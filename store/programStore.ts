@@ -47,13 +47,21 @@ export function difficultyFor(exercise: ProgramExercise, week: number): string {
   return '';
 }
 
+/** Clé d'un exo fait : semaine + ids de séance et d'exo (stable si on réordonne). */
+export function doneKey(week: number, sessionId: string, exerciseId: string): string {
+  return `${week}:${sessionId}:${exerciseId}`;
+}
+
 type ProgramState = {
   program: Program | null;
   progress: ProgramProgress;
+  /** Exos cochés, indépendamment de la position (on peut en sauter). */
+  done: Record<string, true>;
   saveProgram: (program: Program) => void;
-  importProgram: (program: Program, progress: ProgramProgress) => void;
+  importProgram: (program: Program, progress: ProgramProgress, done?: string[]) => void;
   clearProgram: () => void;
   setProgress: (progress: ProgramProgress) => void;
+  setDone: (keys: string[], value: boolean) => void;
 };
 
 const initialProgress: ProgramProgress = { week: 1, session: 0, exercise: 0, set: 0 };
@@ -73,17 +81,31 @@ export const useProgramStore = create<ProgramState>()(
     (set) => ({
       program: null,
       progress: initialProgress,
+      done: {},
       saveProgram: (program) =>
         set((state) => {
           const normalized = normalizeProgram(program);
           return { program: normalized, progress: clampProgress(normalized, state.progress) };
         }),
-      importProgram: (program, progress) => {
+      importProgram: (program, progress, done = []) => {
         const normalized = normalizeProgram(program);
-        set({ program: normalized, progress: clampProgress(normalized, progress) });
+        set({
+          program: normalized,
+          progress: clampProgress(normalized, progress),
+          done: Object.fromEntries(done.map((k) => [k, true])),
+        });
       },
-      clearProgram: () => set({ program: null, progress: initialProgress }),
+      clearProgram: () => set({ program: null, progress: initialProgress, done: {} }),
       setProgress: (progress) => set({ progress }),
+      setDone: (keys, value) =>
+        set((state) => {
+          const done = { ...state.done };
+          for (const k of keys) {
+            if (value) done[k] = true;
+            else delete done[k];
+          }
+          return { done };
+        }),
     }),
     {
       name: 'workouts-program-v1',

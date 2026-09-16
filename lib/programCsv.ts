@@ -48,8 +48,21 @@ function splitLine(line: string, sep = SEP): string[] {
   return out;
 }
 
-export function programToCsv(program: Program, progress: ProgramProgress): string {
-  const meta = `# weeks=${program.weeks} week=${progress.week} session=${progress.session} exercise=${progress.exercise} set=${progress.set}`;
+export function programToCsv(
+  program: Program,
+  progress: ProgramProgress,
+  done: Record<string, true> = {},
+): string {
+  // Exos cochés en indices (les ids changent à l'import) : semaine:séance:exo
+  const doneIdx: string[] = [];
+  for (let week = 1; week <= program.weeks; week++) {
+    program.sessions.forEach((s, si) =>
+      s.exercises.forEach((e, ei) => {
+        if (done[`${week}:${s.id}:${e.id}`]) doneIdx.push(`${week}.${si}.${ei}`);
+      }),
+    );
+  }
+  const meta = `# weeks=${program.weeks} week=${progress.week} session=${progress.session} exercise=${progress.exercise} set=${progress.set} done=${doneIdx.join(',')}`;
   const header = ['séance', 'titre', 'exo', 'séries', ...Array.from({ length: program.weeks }, (_, i) => `S${i + 1}`)];
   const rows = [meta, header.join(SEP)];
   program.sessions.forEach((s, si) => {
@@ -62,7 +75,11 @@ export function programToCsv(program: Program, progress: ProgramProgress): strin
   return rows.join('\n');
 }
 
-export function csvToProgram(text: string): { program: Program; progress: ProgramProgress } {
+export function csvToProgram(text: string): {
+  program: Program;
+  progress: ProgramProgress;
+  done: string[];
+} {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -70,8 +87,12 @@ export function csvToProgram(text: string): { program: Program; progress: Progra
   if (lines.length === 0) throw new Error('Texte vide.');
 
   const meta: Record<string, number> = {};
+  let doneIdx: string[] = [];
   if (lines[0].startsWith('#')) {
-    for (const m of lines.shift()!.matchAll(/(\w+)=(\d+)/g)) meta[m[1]] = Number(m[2]);
+    const metaLine = lines.shift()!;
+    for (const m of metaLine.matchAll(/(\w+)=(\d+)/g)) meta[m[1]] = Number(m[2]);
+    const d = metaLine.match(/done=([\d.,]*)/);
+    if (d) doneIdx = d[1].split(',').filter(Boolean);
   }
   if (lines.length === 0) throw new Error('Aucune ligne d’exo.');
 
@@ -123,5 +144,12 @@ export function csvToProgram(text: string): { program: Program; progress: Progra
     exercise: meta.exercise || 0,
     set: meta.set || 0,
   };
-  return { program, progress };
+  const done: string[] = [];
+  for (const idx of doneIdx) {
+    const [w, si, ei] = idx.split('.').map(Number);
+    const s = program.sessions[si];
+    const e = s?.exercises[ei];
+    if (s && e) done.push(`${w}:${s.id}:${e.id}`);
+  }
+  return { program, progress, done };
 }

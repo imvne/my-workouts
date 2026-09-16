@@ -105,6 +105,10 @@ export default function EditProgram() {
     try {
       const parsed = csvToProgram(content);
       importProgram(parsed.program, parsed.progress);
+      const exos = parsed.program.sessions.reduce((n, x) => n + x.exercises.length, 0);
+      const msg = `${parsed.program.sessions.length} séance(s), ${exos} exo(s).`;
+      if (Platform.OS === 'web') window.alert(`Prog importée\n${msg}`);
+      else Alert.alert('Prog importée', msg);
       router.back();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

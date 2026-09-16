@@ -4,12 +4,23 @@ import type { Program, ProgramProgress, ProgramSession } from '@/types/program';
 
 const SEP = ';';
 
+/** Séparateur du fichier : `;` (Excel/Numbers FR), `,` ou tabulation. */
+function detectSep(line: string): string {
+  const counts: [string, number][] = [
+    [';', (line.match(/;/g) ?? []).length],
+    [',', (line.match(/,/g) ?? []).length],
+    ['\t', (line.match(/\t/g) ?? []).length],
+  ];
+  counts.sort((x, y) => y[1] - x[1]);
+  return counts[0][1] > 0 ? counts[0][0] : SEP;
+}
+
 function quote(value: string): string {
   return /[;"\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
 /** Parse une ligne CSV (séparateur ;) en gérant les guillemets. */
-function splitLine(line: string): string[] {
+function splitLine(line: string, sep = SEP): string[] {
   const out: string[] = [];
   let cur = '';
   let inQuotes = false;
@@ -26,7 +37,7 @@ function splitLine(line: string): string[] {
       }
     } else if (c === '"') {
       inQuotes = true;
-    } else if (c === SEP) {
+    } else if (c === sep) {
       out.push(cur);
       cur = '';
     } else {
@@ -64,7 +75,8 @@ export function csvToProgram(text: string): { program: Program; progress: Progra
   }
   if (lines.length === 0) throw new Error('Aucune ligne d’exo.');
 
-  const header = splitLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const sep = detectSep(lines[0]);
+  const header = splitLine(lines[0], sep).map((h) => h.trim().toLowerCase());
   const hasHeader = header[0] === 'séance' || header[0] === 'seance';
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const weekCols = hasHeader ? header.filter((h) => /^s\d+$/.test(h)).length : 0;
@@ -72,7 +84,7 @@ export function csvToProgram(text: string): { program: Program; progress: Progra
 
   const sessions = new Map<number, ProgramSession>();
   for (const line of dataLines) {
-    const cols = splitLine(line);
+    const cols = splitLine(line, sep);
     const index = parseInt(cols[0], 10);
     const name = (cols[2] ?? '').trim();
     if (Number.isNaN(index) || !name) continue;
@@ -88,7 +100,10 @@ export function csvToProgram(text: string): { program: Program; progress: Progra
     }
     sessions.get(index)!.exercises.push({ id: createId('ex'), name, sets, weeks: weekTexts });
   }
-  if (sessions.size === 0) throw new Error('Aucun exo reconnu. Format : séance;titre;exo;séries;S1;S2…');
+  if (sessions.size === 0)
+    throw new Error(
+      `Aucun exo reconnu (${dataLines.length} ligne(s) lue(s)). Format attendu : séance;titre;exo;séries;S1;S2…`,
+    );
 
   const program: Program = {
     weeks,

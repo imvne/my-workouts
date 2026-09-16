@@ -105,11 +105,17 @@ export default function EditProgram() {
     try {
       const parsed = csvToProgram(content);
       importProgram(parsed.program, parsed.progress);
-      const exos = parsed.program.sessions.reduce((n, x) => n + x.exercises.length, 0);
-      const msg = `${parsed.program.sessions.length} séance(s), ${exos} exo(s).`;
+      // L'éditeur garde sa copie locale : on la remplace pour ne pas réécrire l'ancienne prog.
+      const fresh = normalizeProgram(parsed.program);
+      setProgram(fresh);
+      setWeeksText(String(fresh.weeks));
+      setSessionsText(String(fresh.sessions.length));
+      const exos = fresh.sessions.reduce((n, x) => n + x.exercises.length, 0);
+      const first = fresh.sessions[0]?.exercises[0]?.name ?? '';
+      const msg = `${fresh.sessions.length} séance(s), ${exos} exo(s). Premier exo : ${first}`;
       if (Platform.OS === 'web') window.alert(`Prog importée\n${msg}`);
       else Alert.alert('Prog importée', msg);
-      router.back();
+      router.dismissTo('/');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (Platform.OS === 'web') window.alert(`Import impossible\n${msg}`);

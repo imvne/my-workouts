@@ -15,6 +15,7 @@ export default function Home() {
   const setProgress = useProgramStore((s) => s.setProgress);
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [spaceOpen, setSpaceOpen] = useState(false);
 
   const headerLeft = () => (
     <Pressable
@@ -43,13 +44,45 @@ export default function Home() {
       onRequestClose={() => setMenuOpen(false)}
     >
       <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-        <View style={[styles.menuPanel, { paddingTop: insets.top + spacing.lg }]}>
-          <Text style={styles.menuTitle}>Espaces</Text>
-          <Pressable onPress={() => setMenuOpen(false)} style={styles.menuItemActive}>
-            <Text style={styles.menuItemText}>Autocoaching</Text>
-            <Text style={styles.menuCheck}>✓</Text>
+        <Pressable
+          style={[styles.menuPanel, { paddingTop: insets.top + spacing.lg }]}
+          onPress={() => setSpaceOpen(false)}
+        >
+          <Text style={styles.menuLabel}>Espace</Text>
+          <View style={styles.select}>
+            <Pressable
+              onPress={() => setSpaceOpen((v) => !v)}
+              style={[styles.selectHead, spaceOpen && styles.selectHeadOpen]}
+            >
+              <Text style={styles.selectValue}>Autocoaching</Text>
+              <Text style={[styles.selectChevron, spaceOpen && styles.selectChevronOpen]}>›</Text>
+            </Pressable>
+            {spaceOpen && (
+              <View style={styles.selectList}>
+                <Pressable
+                  onPress={() => {
+                    setSpaceOpen(false);
+                    setMenuOpen(false);
+                  }}
+                  style={styles.selectOption}
+                >
+                  <Text style={styles.selectOptionText}>Autocoaching</Text>
+                  <Text style={styles.menuCheck}>✓</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+
+          <Pressable
+            onPress={() => {
+              setMenuOpen(false);
+              router.push('/position');
+            }}
+            style={styles.menuLink}
+          >
+            <Text style={styles.menuLinkText}>Où j’en suis</Text>
           </Pressable>
-        </View>
+        </Pressable>
       </Pressable>
     </Modal>
   );
@@ -133,9 +166,12 @@ export default function Home() {
       {menu}
 
       <View style={styles.top}>
-        <Text style={styles.context}>
-          Semaine {progress.week} · {session.title}
-        </Text>
+        <Pressable onPress={() => router.push('/position')} hitSlop={8} style={styles.contextBtn}>
+          <Text style={styles.context}>
+            Semaine {progress.week} · {session.title}
+          </Text>
+          <Text style={styles.contextChevron}>›</Text>
+        </Pressable>
         <View
           style={styles.dots}
           accessibilityLabel={`Exo ${exerciseIndex + 1} sur ${exercises.length}`}
@@ -221,26 +257,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
-  menuTitle: {
-    fontFamily: fonts.displayBold,
-    fontSize: 26,
-    letterSpacing: -1,
-    color: colors.text,
-    marginBottom: spacing.sm,
+  menuLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: -spacing.sm,
   },
-  menuItemActive: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  select: {
     backgroundColor: colors.surface,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  selectHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
   },
-  menuItemText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.text },
+  selectHeadOpen: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  selectValue: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.text },
+  selectChevron: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 22,
+    lineHeight: 22,
+    color: colors.textLight,
+    transform: [{ rotate: '90deg' }],
+  },
+  selectChevronOpen: { transform: [{ rotate: '-90deg' }] },
+  selectList: { backgroundColor: colors.background },
+  selectOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
+  },
+  selectOptionText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text },
   menuCheck: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
+  menuLink: { paddingVertical: spacing.sm, marginTop: spacing.md },
+  menuLinkText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
 
   editBtn: { marginRight: spacing.md, paddingVertical: spacing.xs },
   editText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
@@ -271,6 +331,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   top: { gap: spacing.md, paddingTop: spacing.sm },
+  contextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  contextChevron: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 18,
+    lineHeight: 18,
+    color: colors.textLight,
+    transform: [{ rotate: '90deg' }],
+  },
   context: {
     fontFamily: fonts.bodyMedium,
     fontSize: 13,

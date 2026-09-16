@@ -169,7 +169,11 @@ export default function Position() {
         );
       })}
 
-      <Button title="Retour à la séance" onPress={() => router.back()} style={styles.back} />
+      <Button
+        title={`Continuer semaine ${progress.week} · ${sessions[progress.session]?.title ?? ''}`}
+        onPress={() => router.back()}
+        style={styles.back}
+      />
     </ScrollView>
   );
 }

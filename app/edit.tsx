@@ -46,12 +46,6 @@ function resizeWeeks(program: Program, weeks: number): Program {
   };
 }
 
-function resizeSessions(program: Program, count: number): Program {
-  const sessions = program.sessions.slice(0, count);
-  while (sessions.length < count) sessions.push(newSession(program.weeks, sessions.length));
-  return { ...program, sessions };
-}
-
 export default function EditProgram() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -65,18 +59,30 @@ export default function EditProgram() {
     saved ? normalizeProgram(saved) : newProgram(),
   );
   const [weeksText, setWeeksText] = useState(String(program.weeks));
-  const [sessionsText, setSessionsText] = useState(String(program.sessions.length));
+  // Séances déjà remplies : repliées au départ, on les ouvre si besoin.
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () =>
+      new Set(
+        program.sessions.filter((x) => x.exercises.some((e) => e.name.trim())).map((x) => x.id),
+      ),
+  );
+  const toggleCollapsed = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const onWeeksBlur = () => {
     const n = clampInt(weeksText, 1, 12) ?? program.weeks;
     setWeeksText(String(n));
     setProgram((p) => resizeWeeks(p, n));
   };
-  const onSessionsBlur = () => {
-    const n = clampInt(sessionsText, 1, 7) ?? program.sessions.length;
-    setSessionsText(String(n));
-    setProgram((p) => resizeSessions(p, n));
-  };
+  const addSession = () =>
+    setProgram((p) => ({ ...p, sessions: [...p.sessions, newSession(p.weeks, p.sessions.length)] }));
+  const removeSession = (id: string) =>
+    setProgram((p) => ({ ...p, sessions: p.sessions.filter((x) => x.id !== id) }));
 
   const updateSession = (index: number, patch: (s: ProgramSession) => ProgramSession) =>
     setProgram((p) => ({
@@ -110,7 +116,6 @@ export default function EditProgram() {
       const fresh = normalizeProgram(parsed.program);
       setProgram(fresh);
       setWeeksText(String(fresh.weeks));
-      setSessionsText(String(fresh.sessions.length));
       const exos = fresh.sessions.reduce((n, x) => n + x.exercises.length, 0);
       const first = fresh.sessions[0]?.exercises[0]?.name ?? '';
       const msg = `${fresh.sessions.length} séance(s), ${exos} exo(s). Premier exo : ${first}`;
@@ -194,25 +199,39 @@ export default function EditProgram() {
             onChangeText={setWeeksText}
             onBlur={onWeeksBlur}
           />
-          <NumberField
-            label="Séances"
-            value={sessionsText}
-            onChangeText={setSessionsText}
-            onBlur={onSessionsBlur}
-          />
+          <View style={styles.numberField}>
+            <Text style={styles.numberLabel}>Séances</Text>
+            <Text style={styles.numberInput}>{program.sessions.length}</Text>
+          </View>
         </View>
 
         {program.sessions.map((session, si) => (
           <View key={session.id} style={styles.card}>
-            <TextInput
-              value={session.title}
-              onChangeText={(title) => updateSession(si, (s) => ({ ...s, title }))}
-              placeholder={`Séance ${si + 1}`}
-              placeholderTextColor={colors.textLight}
-              style={styles.cardTitle}
-            />
+            <View style={styles.cardHeader}>
+              <TextInput
+                value={session.title}
+                onChangeText={(title) => updateSession(si, (s) => ({ ...s, title }))}
+                placeholder={`Séance ${si + 1}`}
+                placeholderTextColor={colors.textLight}
+                style={styles.cardTitle}
+              />
+              <Pressable
+                onPress={() => toggleCollapsed(session.id)}
+                hitSlop={10}
+                accessibilityLabel={collapsed.has(session.id) ? 'Déplier' : 'Replier'}
+                style={styles.cardToggle}
+              >
+                <Text style={styles.cardCount}>
+                  {session.exercises.filter((e) => e.name.trim()).length} exo
+                  {session.exercises.filter((e) => e.name.trim()).length > 1 ? 's' : ''}
+                </Text>
+                <Text style={[styles.chevron, !collapsed.has(session.id) && styles.chevronOpen]}>
+                  ›
+                </Text>
+              </Pressable>
+            </View>
 
-            {session.exercises.map((exercise, ei) => (
+            {collapsed.has(session.id) ? null : session.exercises.map((exercise, ei) => (
               <View key={exercise.id} style={styles.exercise}>
                 <View style={styles.exerciseHeader}>
                   <Text style={styles.exerciseIndex}>Exo {ei + 1}</Text>
@@ -263,19 +282,34 @@ export default function EditProgram() {
               </View>
             ))}
 
-            <Pressable
-              onPress={() =>
-                updateSession(si, (s) => ({
-                  ...s,
-                  exercises: [...s.exercises, newExercise(program.weeks)],
-                }))
-              }
-              style={({ pressed }) => [styles.addExercise, pressed && styles.pressed]}
-            >
-              <Text style={styles.addExerciseText}>+ Ajouter un exo</Text>
-            </Pressable>
+            {!collapsed.has(session.id) && (
+              <>
+                <Pressable
+                  onPress={() =>
+                    updateSession(si, (s) => ({
+                      ...s,
+                      exercises: [...s.exercises, newExercise(program.weeks)],
+                    }))
+                  }
+                  style={({ pressed }) => [styles.addExercise, pressed && styles.pressed]}
+                >
+                  <Text style={styles.addExerciseText}>+ Ajouter un exo</Text>
+                </Pressable>
+                {program.sessions.length > 1 && (
+                  <Pressable
+                    onPress={() => removeSession(session.id)}
+                    hitSlop={8}
+                    style={styles.removeSession}
+                  >
+                    <Text style={styles.remove}>Retirer la séance</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
           </View>
         ))}
+
+        <Button title="+ Ajouter une séance" variant="ghost" onPress={addSession} />
 
         <Text style={styles.hint}>
           Seule la semaine 1 est nécessaire : si une semaine est vide, la dernière consigne
@@ -391,13 +425,26 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   cardTitle: {
+    flex: 1,
     fontFamily: fonts.displayBold,
     fontSize: 22,
     color: colors.text,
     padding: 0,
     letterSpacing: -0.5,
   },
+  cardToggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  cardCount: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.textMuted },
+  chevron: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 22,
+    lineHeight: 24,
+    color: colors.textLight,
+    paddingHorizontal: spacing.xs,
+  },
+  chevronOpen: { transform: [{ rotate: '90deg' }] },
+  removeSession: { alignItems: 'center', paddingVertical: spacing.xs },
   exercise: {
     gap: spacing.sm,
     paddingTop: spacing.sm,

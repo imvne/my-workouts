@@ -41,25 +41,27 @@ export default function Position() {
   const keysOfWeek = (week: number) => sessions.flatMap((_, si) => keysOf(week, si));
   const allDone = (keys: string[]) => keys.length > 0 && keys.every((k) => done[k]);
 
-  // Position à reprendre : juste après le dernier exo coché dans l'ordre chronologique.
+  // Position à reprendre : premier exo non coché dans l'ordre chronologique.
   const recomputeProgress = (nextDone: Record<string, true>) => {
-    let last: ProgramProgress | null = null;
     for (let week = 1; week <= program.weeks; week++) {
-      sessions.forEach((s, si) => {
-        s.exercises.forEach((e, ei) => {
-          if (nextDone[doneKey(week, s.id, e.id)]) last = { week, session: si, exercise: ei, set: 0 };
-        });
-      });
+      for (let si = 0; si < sessions.length; si++) {
+        const s = sessions[si];
+        for (let ei = 0; ei < s.exercises.length; ei++) {
+          if (!nextDone[doneKey(week, s.id, s.exercises[ei].id)]) {
+            return setProgress({ week, session: si, exercise: ei, set: 0 });
+          }
+        }
+      }
     }
-    if (!last) return setProgress({ week: 1, session: 0, exercise: 0, set: 0 });
-    const p: ProgramProgress = last;
-    if (p.exercise + 1 < sessions[p.session].exercises.length)
-      return setProgress({ ...p, exercise: p.exercise + 1 });
-    if (p.session + 1 < sessions.length)
-      return setProgress({ ...p, session: p.session + 1, exercise: 0 });
-    if (p.week + 1 <= program.weeks)
-      return setProgress({ week: p.week + 1, session: 0, exercise: 0, set: 0 });
-    setProgress({ ...p, set: sessions[p.session].exercises[p.exercise].sets - 1 });
+    // Tout est coché : fin du bloc.
+    const lastS = sessions.length - 1;
+    const lastE = sessions[lastS].exercises.length - 1;
+    setProgress({
+      week: program.weeks,
+      session: lastS,
+      exercise: lastE,
+      set: sessions[lastS].exercises[lastE].sets - 1,
+    });
   };
 
   const toggle = (keys: string[]) => {

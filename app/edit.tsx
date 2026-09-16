@@ -152,19 +152,19 @@ export default function EditProgram() {
             <View style={styles.headerBtns}>
               <Pressable
                 hitSlop={10}
-                onPress={onImportFile}
-                accessibilityLabel="Importer un fichier CSV"
-                style={styles.headerBtn}
-              >
-                <DownloadIcon direction="up" />
-              </Pressable>
-              <Pressable
-                hitSlop={10}
                 onPress={onExport}
                 accessibilityLabel="Télécharger ma prog en CSV"
                 style={styles.headerBtn}
               >
                 <DownloadIcon />
+              </Pressable>
+              <Pressable
+                hitSlop={10}
+                onPress={onImportFile}
+                accessibilityLabel="Importer un fichier CSV"
+                style={styles.headerBtn}
+              >
+                <DownloadIcon direction="up" />
               </Pressable>
             </View>
           ),

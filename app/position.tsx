@@ -149,7 +149,7 @@ export default function Position() {
                                       onPress={() => {
                                         // Reprendre à cette série : l'exo redevient « en cours ».
                                         setDone(eKeys, false);
-                                        setProgress({ week, session: si, exercise: ei, set: k });
+                                        setProgress({ week, session: si, exercise: ei, set: k }, true);
                                       }}
                                       style={[styles.setPill, setDoneHere && styles.setPillDone]}
                                     >

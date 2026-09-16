@@ -14,6 +14,8 @@ export default function Home() {
   const progress = useProgramStore((s) => s.progress);
   const setProgress = useProgramStore((s) => s.setProgress);
   const setDone = useProgramStore((s) => s.setDone);
+  const sessionStarted = useProgramStore((s) => s.sessionStarted);
+  const startSession = useProgramStore((s) => s.startSession);
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
@@ -117,12 +119,18 @@ export default function Home() {
 
   const goNext = () => {
     if (!isLastSet) {
-      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex + 1 });
+      setProgress(
+        { ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex + 1 },
+        true,
+      );
       return;
     }
     setDone([doneKey(progress.week, session.id, current.id)], true);
     if (!isLastExercise) {
-      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex + 1, set: 0 });
+      setProgress(
+        { ...progress, session: sessionIndex, exercise: exerciseIndex + 1, set: 0 },
+        true,
+      );
     } else if (!isLastSession) {
       setProgress({ ...progress, session: sessionIndex + 1, exercise: 0, set: 0 });
     } else if (!isLastWeek) {
@@ -134,19 +142,28 @@ export default function Home() {
 
   const goPrev = () => {
     if (setIndex > 0) {
-      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex - 1 });
+      setProgress(
+        { ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex - 1 },
+        true,
+      );
     } else if (exerciseIndex > 0) {
       const prev = exercises[exerciseIndex - 1];
-      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex - 1, set: prev.sets - 1 });
+      setProgress(
+        { ...progress, session: sessionIndex, exercise: exerciseIndex - 1, set: prev.sets - 1 },
+        true,
+      );
     } else if (sessionIndex > 0) {
       const prevSession = sessions[sessionIndex - 1];
       const prev = prevSession.exercises[prevSession.exercises.length - 1];
-      setProgress({
-        ...progress,
-        session: sessionIndex - 1,
-        exercise: prevSession.exercises.length - 1,
-        set: prev.sets - 1,
-      });
+      setProgress(
+        {
+          ...progress,
+          session: sessionIndex - 1,
+          exercise: prevSession.exercises.length - 1,
+          set: prev.sets - 1,
+        },
+        true,
+      );
     }
   };
 
@@ -163,6 +180,32 @@ export default function Home() {
         ? 'Fin du bloc'
         : `Semaine ${progress.week + 1}`
       : sessions[sessionIndex + 1].title;
+
+  if (!sessionStarted) {
+    return (
+      <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <Stack.Screen options={{ headerLeft, headerRight }} />
+        {menu}
+        <View />
+        <View style={styles.intro}>
+          <Text style={styles.introWeek}>Semaine {progress.week}</Text>
+          <Text style={styles.introTitle} adjustsFontSizeToFit numberOfLines={2}>
+            {session.title}
+          </Text>
+          <Text style={styles.introMeta}>
+            {exercises.length} exo{exercises.length > 1 ? 's' : ''} ·{' '}
+            {exercises.reduce((n, e) => n + e.sets, 0)} séries
+          </Text>
+        </View>
+        <View style={styles.bottom}>
+          <Button title="Commencer la séance" onPress={startSession} style={styles.mainBtn} />
+          <Pressable onPress={() => router.push('/position')} hitSlop={8} style={styles.prev}>
+            <Text style={styles.prevText}>Changer de séance</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
@@ -416,6 +459,24 @@ const styles = StyleSheet.create({
   setPillText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.textLight },
   setPillTextDone: { color: colors.pinkDeep },
   setPillTextOn: { color: colors.white },
+
+  intro: { alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm },
+  introWeek: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  introTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 40,
+    lineHeight: 44,
+    letterSpacing: -1.5,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  introMeta: { fontFamily: fonts.body, fontSize: 15, color: colors.pinkDeep },
 
   bottom: { gap: spacing.md },
   nextBox: {

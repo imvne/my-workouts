@@ -144,20 +144,15 @@ export default function Position() {
                                     <Pressable
                                       key={k}
                                       onPress={() => toggle(p, p, st)}
-                                      style={[
-                                        styles.setPill,
-                                        st === 'done' && styles.setPillDone,
-                                        st === 'current' && styles.setPillCurrent,
-                                      ]}
+                                      style={[styles.setPill, st === 'done' && styles.setPillDone]}
                                     >
                                       <Text
                                         style={[
                                           styles.setPillText,
                                           st === 'done' && styles.setPillTextDone,
-                                          st === 'current' && styles.setPillTextOn,
                                         ]}
                                       >
-                                        {k + 1}
+                                        {st === 'done' ? '✓' : k + 1}
                                       </Text>
                                     </Pressable>
                                   );
@@ -204,20 +199,16 @@ function Row({
         accessibilityRole="checkbox"
         accessibilityState={{ checked: status === 'done' }}
         accessibilityLabel={label}
-        style={[
-          styles.check,
-          status === 'done' && styles.checkDone,
-          status === 'current' && styles.checkCurrent,
-        ]}
+        style={[styles.check, status === 'done' && styles.checkDone]}
       >
         {status === 'done' && <Text style={styles.checkMark}>✓</Text>}
-        {status === 'current' && <View style={styles.checkDot} />}
       </Pressable>
       <Pressable onPress={onToggle} style={styles.rowLabel}>
         <Text
           style={[
             level === 0 ? styles.labelL0 : level === 1 ? styles.labelL1 : styles.labelL2,
             status === 'todo' && styles.labelTodo,
+            status === 'current' && styles.labelCurrent,
           ]}
           numberOfLines={1}
         >
@@ -272,14 +263,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkDone: { backgroundColor: colors.pinkSoft, borderColor: colors.pinkSoft },
-  checkCurrent: { borderColor: colors.pinkDeep },
   checkMark: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.pinkDeep },
-  checkDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.pinkDeep },
   rowLabel: { flex: 1 },
   labelL0: { fontFamily: fonts.displayBold, fontSize: 20, letterSpacing: -0.5, color: colors.text },
   labelL1: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.text },
   labelL2: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text },
   labelTodo: { color: colors.textMuted },
+  labelCurrent: { color: colors.pinkDeep },
   sub: { fontFamily: fonts.body, fontSize: 13, color: colors.pinkDeep, marginTop: 2 },
   chevron: {
     fontFamily: fonts.bodyBold,
@@ -306,8 +296,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   setPillDone: { backgroundColor: colors.pinkSoft, borderColor: colors.pinkSoft },
-  setPillCurrent: { backgroundColor: colors.pinkDeep, borderColor: colors.pinkDeep },
   setPillText: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.textLight },
   setPillTextDone: { color: colors.pinkDeep },
-  setPillTextOn: { color: colors.white },
 });

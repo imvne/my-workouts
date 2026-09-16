@@ -150,18 +150,19 @@ export default function EditProgram() {
         options={{
           headerRight: () => (
             <View style={styles.headerBtns}>
-              <Pressable
-                hitSlop={10}
-                onPress={onExport}
-                accessibilityLabel="Télécharger ma prog en CSV"
-                style={styles.headerBtn}
-              >
-                <DownloadIcon />
-              </Pressable>
+              {/* ⤓ = faire entrer un CSV dans l'app, ⤒ = sortir / partager ma prog */}
               <Pressable
                 hitSlop={10}
                 onPress={onImportFile}
                 accessibilityLabel="Importer un fichier CSV"
+                style={styles.headerBtn}
+              >
+                <DownloadIcon direction="down" />
+              </Pressable>
+              <Pressable
+                hitSlop={10}
+                onPress={onExport}
+                accessibilityLabel="Partager ma prog en CSV"
                 style={styles.headerBtn}
               >
                 <DownloadIcon direction="up" />

@@ -14,6 +14,7 @@ export function newExercise(weeks: number): ProgramExercise {
     id: createId('ex'),
     name: '',
     sets: DEFAULT_SETS,
+    reps: Array.from({ length: weeks }, () => []),
     loads: Array.from({ length: weeks }, () => []),
     weeks: Array.from({ length: weeks }, () => ''),
   };
@@ -39,32 +40,53 @@ export function normalizeProgram(program: Program): Program {
         return {
           ...e,
           sets,
-          loads: Array.from({ length: program.weeks }, (_, i) => {
-            const arr = e.loads?.[i] ?? [];
-            // une valeur = charge commune ; sinon on aligne sur le nombre de séries
-            return arr.length > 1 ? Array.from({ length: sets }, (_, k) => arr[k] ?? '') : arr;
-          }),
+          // une valeur = commune à toutes les séries ; sinon on aligne sur le nombre de séries
+          reps: alignSeries(e.reps, program.weeks, sets),
+          loads: alignSeries(e.loads, program.weeks, sets),
         };
       }),
     })),
   };
 }
 
-/** Charges de la semaine demandée, sinon celles de la dernière semaine renseignée avant. */
-export function loadsForWeek(exercise: ProgramExercise, week: number): string[] {
-  const loads = exercise.loads ?? [];
-  for (let i = Math.min(week, loads.length) - 1; i >= 0; i--) {
-    const arr = (loads[i] ?? []).map((v) => v.trim());
+function alignSeries(source: string[][] | undefined, weeks: number, sets: number): string[][] {
+  return Array.from({ length: weeks }, (_, i) => {
+    const arr = source?.[i] ?? [];
+    return arr.length > 1 ? Array.from({ length: sets }, (_, k) => arr[k] ?? '') : arr;
+  });
+}
+
+/** Valeurs de la semaine demandée, sinon celles de la dernière semaine renseignée avant. */
+function seriesForWeek(source: string[][] | undefined, week: number): string[] {
+  const list = source ?? [];
+  for (let i = Math.min(week, list.length) - 1; i >= 0; i--) {
+    const arr = (list[i] ?? []).map((v) => v.trim());
     if (arr.some(Boolean)) return arr;
   }
   return [];
 }
 
-/** Charge à afficher pour une série donnée ('' si aucune). */
-export function loadFor(exercise: ProgramExercise, week: number, setIndex: number): string {
-  const arr = loadsForWeek(exercise, week);
+function seriesValue(arr: string[], setIndex: number): string {
   if (arr.length === 0) return '';
   return (arr.length === 1 ? arr[0] : (arr[setIndex] ?? '')) || '';
+}
+
+export function loadsForWeek(exercise: ProgramExercise, week: number): string[] {
+  return seriesForWeek(exercise.loads, week);
+}
+
+export function repsForWeek(exercise: ProgramExercise, week: number): string[] {
+  return seriesForWeek(exercise.reps, week);
+}
+
+/** Charge à afficher pour une série donnée ('' si aucune). */
+export function loadFor(exercise: ProgramExercise, week: number, setIndex: number): string {
+  return seriesValue(loadsForWeek(exercise, week), setIndex);
+}
+
+/** Répétitions à afficher pour une série donnée ('' si aucune). */
+export function repFor(exercise: ProgramExercise, week: number, setIndex: number): string {
+  return seriesValue(repsForWeek(exercise, week), setIndex);
 }
 
 /** Consigne de la semaine demandée, sinon la dernière semaine renseignée avant. */

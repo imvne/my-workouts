@@ -10,6 +10,7 @@ import {
   doneKey,
   loadFor,
   normalizeProgram,
+  repFor,
   useProgramStore,
 } from '@/store/programStore';
 
@@ -244,12 +245,21 @@ export default function Home() {
         <Text style={styles.exerciseName} adjustsFontSizeToFit numberOfLines={3}>
           {current.name}
         </Text>
-        <Text style={styles.difficulty}>{difficultyFor(current, progress.week) || '—'}</Text>
-        {!!loadFor(current, progress.week, setIndex) && (
-          <View style={styles.loadBadge}>
-            <Text style={styles.loadText}>{loadFor(current, progress.week, setIndex)}</Text>
-          </View>
+        {!!difficultyFor(current, progress.week) && (
+          <Text style={styles.difficulty}>{difficultyFor(current, progress.week)}</Text>
         )}
+        <View style={styles.badges}>
+          {!!repFor(current, progress.week, setIndex) && (
+            <View style={styles.loadBadge}>
+              <Text style={styles.loadText}>{repFor(current, progress.week, setIndex)} reps</Text>
+            </View>
+          )}
+          {!!loadFor(current, progress.week, setIndex) && (
+            <View style={styles.loadBadge}>
+              <Text style={styles.loadText}>{loadFor(current, progress.week, setIndex)}</Text>
+            </View>
+          )}
+        </View>
         <View style={styles.sets}>
           {Array.from({ length: Math.ceil(current.sets / 5) }, (_, row) => (
             <View key={row} style={styles.setsRow}>
@@ -438,6 +448,7 @@ const styles = StyleSheet.create({
     color: colors.pinkDeep,
     textAlign: 'center',
   },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm },
   loadBadge: {
     backgroundColor: colors.pinkSoft,
     borderRadius: radii.pill,

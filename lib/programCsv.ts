@@ -70,12 +70,14 @@ export function programToCsv(
     'séries',
     ...Array.from({ length: program.weeks }, (_, i) => `S${i + 1}`),
     ...Array.from({ length: program.weeks }, (_, i) => `C${i + 1}`),
+    ...Array.from({ length: program.weeks }, (_, i) => `R${i + 1}`),
   ];
   const rows = [meta, header.join(SEP)];
   program.sessions.forEach((s, si) => {
     s.exercises.forEach((e) => {
       // Charges d'une semaine : valeurs séparées par « | » quand elles varient par série.
       const loads = Array.from({ length: program.weeks }, (_, i) => (e.loads?.[i] ?? []).join('|'));
+      const reps = Array.from({ length: program.weeks }, (_, i) => (e.reps?.[i] ?? []).join('|'));
       rows.push(
         [
           String(si + 1),
@@ -84,6 +86,7 @@ export function programToCsv(
           String(e.sets),
           ...e.weeks.map(quote),
           ...loads.map(quote),
+          ...reps.map(quote),
         ].join(SEP),
       );
     });
@@ -118,6 +121,7 @@ export function csvToProgram(text: string): {
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const weekCols = hasHeader ? header.filter((h) => /^s\d+$/.test(h)).length : 0;
   const loadCols = hasHeader ? header.filter((h) => /^c\d+$/.test(h)).length : 0;
+  const repCols = hasHeader ? header.filter((h) => /^r\d+$/.test(h)).length : 0;
   let weeks = meta.weeks || weekCols || 1;
 
   const sessions = new Map<number, ProgramSession>();
@@ -131,6 +135,9 @@ export function csvToProgram(text: string): {
     const nbWeeks = weekCols || rest.length;
     const weekTexts = rest.slice(0, nbWeeks);
     const loadTexts = loadCols ? rest.slice(nbWeeks, nbWeeks + loadCols) : [];
+    const repTexts = repCols
+      ? rest.slice(nbWeeks + loadCols, nbWeeks + loadCols + repCols)
+      : [];
     weeks = Math.max(weeks, weekTexts.length);
     if (!sessions.has(index)) {
       sessions.set(index, {
@@ -145,6 +152,7 @@ export function csvToProgram(text: string): {
       sets,
       weeks: weekTexts,
       loads: loadTexts.map((v) => (v ? v.split('|') : [])),
+      reps: repTexts.map((v) => (v ? v.split('|') : [])),
     });
   }
   if (sessions.size === 0)
@@ -162,6 +170,7 @@ export function csvToProgram(text: string): {
           ...e,
           weeks: Array.from({ length: weeks }, (_, i) => e.weeks[i] ?? ''),
           loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
+          reps: Array.from({ length: weeks }, (_, i) => e.reps[i] ?? []),
         })),
       })),
   };

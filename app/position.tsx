@@ -10,13 +10,14 @@ import {
   doneKey,
   loadsForWeek,
   normalizeProgram,
+  repsForWeek,
   useProgramStore,
 } from '@/store/programStore';
 import type { ProgramProgress } from '@/types/program';
 
-/** « 60 kg » si toutes les séries partagent la charge, sinon « 60 · 65 · 70 ». */
-function summarizeLoads(exercise: Parameters<typeof loadsForWeek>[0], week: number): string {
-  const arr = loadsForWeek(exercise, week).filter(Boolean);
+/** « 60 kg » si toutes les séries partagent la valeur, sinon « 60 · 65 · 70 ». */
+function summarize(values: string[]): string {
+  const arr = values.filter(Boolean);
   if (arr.length === 0) return '';
   return new Set(arr).size === 1 ? arr[0] : arr.join(' · ');
 }
@@ -169,7 +170,12 @@ export default function Position() {
                           <View key={exercise.id}>
                             <Row
                               label={exercise.name}
-                              sub={[difficultyFor(exercise, week), summarizeLoads(exercise, week)]
+                              sub={[
+                                summarize(repsForWeek(exercise, week)) &&
+                                  `${summarize(repsForWeek(exercise, week))} reps`,
+                                summarize(loadsForWeek(exercise, week)),
+                                difficultyFor(exercise, week),
+                              ]
                                 .filter(Boolean)
                                 .join(' — ')}
                               checked={eDone}

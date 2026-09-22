@@ -5,7 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
-import { difficultyFor, doneKey, normalizeProgram, useProgramStore } from '@/store/programStore';
+import {
+  difficultyFor,
+  doneKey,
+  loadsForWeek,
+  normalizeProgram,
+  useProgramStore,
+} from '@/store/programStore';
 import type { ProgramProgress } from '@/types/program';
 
 export default function Position() {
@@ -132,7 +138,9 @@ export default function Position() {
                           <View key={exercise.id}>
                             <Row
                               label={exercise.name}
-                              sub={difficultyFor(exercise, week)}
+                              sub={[difficultyFor(exercise, week), loadsForWeek(exercise, week).join(' · ')]
+                                .filter(Boolean)
+                                .join(' — ')}
                               checked={eDone}
                               current={eCurrent}
                               open={eOpen}

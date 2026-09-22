@@ -129,6 +129,34 @@ export default function EditProgram() {
     }
   };
 
+  const setLoad = (si: number, id: string, wi: number, k: number, value: string) =>
+    updateExercise(si, id, (e) => {
+      const loads = e.loads.map((a) => [...a]);
+      while (loads.length <= wi) loads.push([]);
+      while (loads[wi].length <= k) loads[wi].push('');
+      loads[wi][k] = value;
+      return { ...e, loads };
+    });
+
+  const togglePerSet = (si: number, id: string, wi: number) =>
+    updateExercise(si, id, (e) => {
+      const loads = e.loads.map((a) => [...a]);
+      while (loads.length <= wi) loads.push([]);
+      const cur = loads[wi];
+      loads[wi] =
+        cur.length > 1
+          ? [cur.find(Boolean) ?? ''] // retour à une charge commune
+          : Array.from({ length: e.sets }, () => cur[0] ?? ''); // une charge par série
+      return { ...e, loads };
+    });
+
+  const setSets = (si: number, id: string, sets: number) =>
+    updateExercise(si, id, (e) => ({
+      ...e,
+      sets,
+      loads: e.loads.map((a) => (a.length > 1 ? Array.from({ length: sets }, (_, k) => a[k] ?? '') : a)),
+    }));
+
   const onSave = () => {
     const cleaned: Program = {
       ...program,
@@ -142,6 +170,10 @@ export default function EditProgram() {
             name: e.name.trim(),
             sets: Math.max(1, e.sets || 1),
             weeks: e.weeks.map((w) => w.trim()),
+            loads: e.loads.map((a) => {
+              const trimmed = a.map((v) => v.trim());
+              return trimmed.some(Boolean) ? trimmed : [];
+            }),
           })),
       })),
     };
@@ -252,32 +284,68 @@ export default function EditProgram() {
                 <TextInput
                   value={exercise.name}
                   onChangeText={(name) => updateExercise(si, exercise.id, (e) => ({ ...e, name }))}
-                  placeholder="Nom de l’exo (ex. Squat)"
-                  placeholderTextColor={colors.textLight}
                   style={styles.nameInput}
                 />
                 <SetsStepper
                   value={exercise.sets}
-                  onChange={(sets) => updateExercise(si, exercise.id, (e) => ({ ...e, sets }))}
+                  onChange={(sets) => setSets(si, exercise.id, sets)}
                 />
                 <View style={styles.weeksGrid}>
-                  {exercise.weeks.map((text, wi) => (
-                    <View key={wi} style={[styles.weekCell, wi === 0 && styles.weekCellFirst]}>
-                      <Text style={styles.weekLabel}>S{wi + 1}</Text>
-                      <TextInput
-                        value={text}
-                        onChangeText={(value) =>
-                          updateExercise(si, exercise.id, (e) => ({
-                            ...e,
-                            weeks: e.weeks.map((w, i) => (i === wi ? value : w)),
-                          }))
-                        }
-                        placeholder={wi === 0 ? 'Difficulté semaine 1 (ex. 4×8 @ 60 kg)' : '—'}
-                        placeholderTextColor={colors.textLight}
-                        style={styles.weekInput}
-                      />
-                    </View>
-                  ))}
+                  {exercise.weeks.map((text, wi) => {
+                    const loads = exercise.loads[wi] ?? [];
+                    const perSet = loads.length > 1;
+                    return (
+                      <View key={wi} style={[styles.weekCell, wi === 0 && styles.weekCellFirst]}>
+                        <View style={styles.weekRow}>
+                          <Text style={styles.weekLabel}>S{wi + 1}</Text>
+                          <TextInput
+                            value={text}
+                            onChangeText={(value) =>
+                              updateExercise(si, exercise.id, (e) => ({
+                                ...e,
+                                weeks: e.weeks.map((w, i) => (i === wi ? value : w)),
+                              }))
+                            }
+                            style={styles.weekInput}
+                          />
+                          {!perSet && (
+                            <TextInput
+                              value={loads[0] ?? ''}
+                              onChangeText={(value) => setLoad(si, exercise.id, wi, 0, value)}
+                              style={styles.loadInput}
+                            />
+                          )}
+                          <Pressable
+                            hitSlop={8}
+                            onPress={() => togglePerSet(si, exercise.id, wi)}
+                            accessibilityLabel={
+                              perSet ? 'Même charge pour toutes les séries' : 'Charge par série'
+                            }
+                            style={[styles.perSetBtn, perSet && styles.perSetBtnOn]}
+                          >
+                            <Text style={[styles.perSetText, perSet && styles.perSetTextOn]}>
+                              {perSet ? '≠' : '='}
+                            </Text>
+                          </Pressable>
+                        </View>
+
+                        {perSet && (
+                          <View style={styles.loadGrid}>
+                            {Array.from({ length: exercise.sets }, (_, k) => (
+                              <View key={k} style={styles.loadCell}>
+                                <Text style={styles.loadCellLabel}>{k + 1}</Text>
+                                <TextInput
+                                  value={loads[k] ?? ''}
+                                  onChangeText={(value) => setLoad(si, exercise.id, wi, k, value)}
+                                  style={styles.loadCellInput}
+                                />
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
             ))}
@@ -516,19 +584,60 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   weekCell: {
-    flexGrow: 1,
-    flexBasis: '45%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+    width: '100%',
     backgroundColor: colors.background,
     borderRadius: radii.md,
     paddingHorizontal: spacing.sm + 4,
   },
   weekCellFirst: {
-    flexBasis: '100%',
     borderWidth: 1,
     borderColor: colors.pinkSoft,
+  },
+  weekRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, width: '100%' },
+  loadInput: {
+    width: 76,
+    flexShrink: 0,
+    paddingVertical: spacing.sm + 2,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    color: colors.text,
+    textAlign: 'right',
+  },
+  perSetBtn: {
+    flexShrink: 0,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  perSetBtnOn: { backgroundColor: colors.pinkDeep },
+  perSetText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.pinkDeep },
+  perSetTextOn: { color: colors.white },
+  loadGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    paddingBottom: spacing.sm,
+    paddingLeft: 22 + spacing.sm,
+  },
+  loadCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.surface,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.xs + 2,
+  },
+  loadCellLabel: { fontFamily: fonts.bodyBold, fontSize: 11, color: colors.textLight },
+  loadCellInput: {
+    width: 52,
+    paddingVertical: spacing.xs + 2,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    color: colors.text,
+    textAlign: 'center',
   },
   weekLabel: {
     fontFamily: fonts.bodyBold,
@@ -537,7 +646,10 @@ const styles = StyleSheet.create({
     width: 22,
   },
   weekInput: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
     paddingVertical: spacing.sm + 2,
     fontFamily: fonts.body,
     fontSize: 15,

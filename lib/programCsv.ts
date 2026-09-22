@@ -63,12 +63,28 @@ export function programToCsv(
     );
   }
   const meta = `# weeks=${program.weeks} week=${progress.week} session=${progress.session} exercise=${progress.exercise} set=${progress.set} done=${doneIdx.join(',')}`;
-  const header = ['séance', 'titre', 'exo', 'séries', ...Array.from({ length: program.weeks }, (_, i) => `S${i + 1}`)];
+  const header = [
+    'séance',
+    'titre',
+    'exo',
+    'séries',
+    ...Array.from({ length: program.weeks }, (_, i) => `S${i + 1}`),
+    ...Array.from({ length: program.weeks }, (_, i) => `C${i + 1}`),
+  ];
   const rows = [meta, header.join(SEP)];
   program.sessions.forEach((s, si) => {
     s.exercises.forEach((e) => {
+      // Charges d'une semaine : valeurs séparées par « | » quand elles varient par série.
+      const loads = Array.from({ length: program.weeks }, (_, i) => (e.loads?.[i] ?? []).join('|'));
       rows.push(
-        [String(si + 1), quote(s.title), quote(e.name), String(e.sets), ...e.weeks.map(quote)].join(SEP),
+        [
+          String(si + 1),
+          quote(s.title),
+          quote(e.name),
+          String(e.sets),
+          ...e.weeks.map(quote),
+          ...loads.map(quote),
+        ].join(SEP),
       );
     });
   });
@@ -101,6 +117,7 @@ export function csvToProgram(text: string): {
   const hasHeader = header[0] === 'séance' || header[0] === 'seance';
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const weekCols = hasHeader ? header.filter((h) => /^s\d+$/.test(h)).length : 0;
+  const loadCols = hasHeader ? header.filter((h) => /^c\d+$/.test(h)).length : 0;
   let weeks = meta.weeks || weekCols || 1;
 
   const sessions = new Map<number, ProgramSession>();
@@ -110,7 +127,10 @@ export function csvToProgram(text: string): {
     const name = (cols[2] ?? '').trim();
     if (Number.isNaN(index) || !name) continue;
     const sets = Math.max(1, parseInt(cols[3], 10) || DEFAULT_SETS);
-    const weekTexts = cols.slice(4).map((w) => w.trim());
+    const rest = cols.slice(4).map((w) => w.trim());
+    const nbWeeks = weekCols || rest.length;
+    const weekTexts = rest.slice(0, nbWeeks);
+    const loadTexts = loadCols ? rest.slice(nbWeeks, nbWeeks + loadCols) : [];
     weeks = Math.max(weeks, weekTexts.length);
     if (!sessions.has(index)) {
       sessions.set(index, {
@@ -119,11 +139,17 @@ export function csvToProgram(text: string): {
         exercises: [],
       });
     }
-    sessions.get(index)!.exercises.push({ id: createId('ex'), name, sets, weeks: weekTexts });
+    sessions.get(index)!.exercises.push({
+      id: createId('ex'),
+      name,
+      sets,
+      weeks: weekTexts,
+      loads: loadTexts.map((v) => (v ? v.split('|') : [])),
+    });
   }
   if (sessions.size === 0)
     throw new Error(
-      `Aucun exo reconnu (${dataLines.length} ligne(s) lue(s)). Format attendu : séance;titre;exo;séries;S1;S2…`,
+      `Aucun exo reconnu (${dataLines.length} ligne(s) lue(s)). Format attendu : séance;titre;exo;séries;S1;S2…;C1;C2…`,
     );
 
   const program: Program = {
@@ -135,6 +161,7 @@ export function csvToProgram(text: string): {
         exercises: s.exercises.map((e) => ({
           ...e,
           weeks: Array.from({ length: weeks }, (_, i) => e.weeks[i] ?? ''),
+          loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
         })),
       })),
   };

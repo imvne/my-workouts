@@ -5,7 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
-import { difficultyFor, doneKey, normalizeProgram, useProgramStore } from '@/store/programStore';
+import {
+  difficultyFor,
+  doneKey,
+  loadFor,
+  normalizeProgram,
+  useProgramStore,
+} from '@/store/programStore';
 
 export default function Home() {
   const router = useRouter();
@@ -241,6 +247,11 @@ export default function Home() {
           {current.name}
         </Text>
         <Text style={styles.difficulty}>{difficultyFor(current, progress.week) || '—'}</Text>
+        {!!loadFor(current, progress.week, setIndex) && (
+          <View style={styles.loadBadge}>
+            <Text style={styles.loadText}>{loadFor(current, progress.week, setIndex)}</Text>
+          </View>
+        )}
         <View style={styles.sets}>
           {Array.from({ length: Math.ceil(current.sets / 5) }, (_, row) => (
             <View key={row} style={styles.setsRow}>
@@ -435,6 +446,18 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     color: colors.pinkDeep,
     textAlign: 'center',
+  },
+  loadBadge: {
+    backgroundColor: colors.pinkSoft,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  loadText: {
+    fontFamily: fonts.displayBold,
+    fontSize: 22,
+    letterSpacing: -0.5,
+    color: colors.pinkDeep,
   },
   sets: {
     gap: spacing.sm,

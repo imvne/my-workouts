@@ -14,6 +14,7 @@ export function newExercise(weeks: number): ProgramExercise {
     id: createId('ex'),
     name: '',
     sets: DEFAULT_SETS,
+    loads: Array.from({ length: weeks }, () => []),
     weeks: Array.from({ length: weeks }, () => ''),
   };
 }
@@ -33,9 +34,37 @@ export function normalizeProgram(program: Program): Program {
     sessions: program.sessions.map((s, i) => ({
       ...s,
       title: s.title || `Séance ${i + 1}`,
-      exercises: s.exercises.map((e) => ({ ...e, sets: e.sets || DEFAULT_SETS })),
+      exercises: s.exercises.map((e) => {
+        const sets = e.sets || DEFAULT_SETS;
+        return {
+          ...e,
+          sets,
+          loads: Array.from({ length: program.weeks }, (_, i) => {
+            const arr = e.loads?.[i] ?? [];
+            // une valeur = charge commune ; sinon on aligne sur le nombre de séries
+            return arr.length > 1 ? Array.from({ length: sets }, (_, k) => arr[k] ?? '') : arr;
+          }),
+        };
+      }),
     })),
   };
+}
+
+/** Charges de la semaine demandée, sinon celles de la dernière semaine renseignée avant. */
+export function loadsForWeek(exercise: ProgramExercise, week: number): string[] {
+  const loads = exercise.loads ?? [];
+  for (let i = Math.min(week, loads.length) - 1; i >= 0; i--) {
+    const arr = (loads[i] ?? []).map((v) => v.trim());
+    if (arr.some(Boolean)) return arr;
+  }
+  return [];
+}
+
+/** Charge à afficher pour une série donnée ('' si aucune). */
+export function loadFor(exercise: ProgramExercise, week: number, setIndex: number): string {
+  const arr = loadsForWeek(exercise, week);
+  if (arr.length === 0) return '';
+  return (arr.length === 1 ? arr[0] : (arr[setIndex] ?? '')) || '';
 }
 
 /** Consigne de la semaine demandée, sinon la dernière semaine renseignée avant. */

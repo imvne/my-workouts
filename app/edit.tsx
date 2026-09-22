@@ -27,12 +27,6 @@ import {
 } from '@/store/programStore';
 import type { Program, ProgramExercise, ProgramSession } from '@/types/program';
 
-function clampInt(text: string, min: number, max: number): number | null {
-  const n = parseInt(text, 10);
-  if (Number.isNaN(n)) return null;
-  return Math.max(min, Math.min(max, n));
-}
-
 function resizeWeeks(program: Program, weeks: number): Program {
   return {
     weeks,
@@ -41,6 +35,7 @@ function resizeWeeks(program: Program, weeks: number): Program {
       exercises: s.exercises.map((e) => ({
         ...e,
         weeks: Array.from({ length: weeks }, (_, i) => e.weeks[i] ?? ''),
+        loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
       })),
     })),
   };
@@ -58,7 +53,7 @@ export default function EditProgram() {
   const [program, setProgram] = useState<Program>(() =>
     saved ? normalizeProgram(saved) : newProgram(),
   );
-  const [weeksText, setWeeksText] = useState(String(program.weeks));
+  const [week, setWeek] = useState(1); // semaine en cours d'édition (1-based)
   // Séances déjà remplies : repliées au départ, on les ouvre si besoin.
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () =>
@@ -74,11 +69,19 @@ export default function EditProgram() {
       return next;
     });
 
-  const onWeeksBlur = () => {
-    const n = clampInt(weeksText, 1, 12) ?? program.weeks;
-    setWeeksText(String(n));
-    setProgram((p) => resizeWeeks(p, n));
-  };
+  const addWeek = () =>
+    setProgram((p) => {
+      const n = Math.min(12, p.weeks + 1);
+      setWeek(n);
+      return resizeWeeks(p, n);
+    });
+
+  const removeWeek = () =>
+    setProgram((p) => {
+      const n = Math.max(1, p.weeks - 1);
+      setWeek((w) => Math.min(w, n));
+      return resizeWeeks(p, n);
+    });
   const addSession = () =>
     setProgram((p) => ({ ...p, sessions: [...p.sessions, newSession(p.weeks, p.sessions.length)] }));
   const removeSession = (id: string) =>
@@ -115,7 +118,7 @@ export default function EditProgram() {
       // L'éditeur garde sa copie locale : on la remplace pour ne pas réécrire l'ancienne prog.
       const fresh = normalizeProgram(parsed.program);
       setProgram(fresh);
-      setWeeksText(String(fresh.weeks));
+      setWeek(1);
       const exos = fresh.sessions.reduce((n, x) => n + x.exercises.length, 0);
       const first = fresh.sessions[0]?.exercises[0]?.name ?? '';
       const msg = `${fresh.sessions.length} séance(s), ${exos} exo(s). Premier exo : ${first}`;
@@ -224,17 +227,26 @@ export default function EditProgram() {
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
       >
-        <View style={styles.row}>
-          <NumberField
-            label="Semaines"
-            value={weeksText}
-            onChangeText={setWeeksText}
-            onBlur={onWeeksBlur}
-          />
-          <View style={styles.numberField}>
-            <Text style={styles.numberLabel}>Séances</Text>
-            <Text style={styles.numberInput}>{program.sessions.length}</Text>
-          </View>
+        <View style={styles.weekTabs}>
+          {Array.from({ length: program.weeks }, (_, i) => i + 1).map((w) => (
+            <Pressable
+              key={w}
+              onPress={() => setWeek(w)}
+              style={[styles.weekTab, w === week && styles.weekTabOn]}
+            >
+              <Text style={[styles.weekTabText, w === week && styles.weekTabTextOn]}>S{w}</Text>
+            </Pressable>
+          ))}
+          {program.weeks > 1 && (
+            <Pressable onPress={removeWeek} hitSlop={6} style={styles.weekTabGhost}>
+              <Text style={styles.weekTabGhostText}>−</Text>
+            </Pressable>
+          )}
+          {program.weeks < 12 && (
+            <Pressable onPress={addWeek} hitSlop={6} style={styles.weekTabGhost}>
+              <Text style={styles.weekTabGhostText}>+</Text>
+            </Pressable>
+          )}
         </View>
 
         {program.sessions.map((session, si) => (
@@ -290,62 +302,63 @@ export default function EditProgram() {
                   value={exercise.sets}
                   onChange={(sets) => setSets(si, exercise.id, sets)}
                 />
-                <View style={styles.weeksGrid}>
-                  {exercise.weeks.map((text, wi) => {
-                    const loads = exercise.loads[wi] ?? [];
-                    const perSet = loads.length > 1;
-                    return (
-                      <View key={wi} style={[styles.weekCell, wi === 0 && styles.weekCellFirst]}>
-                        <View style={styles.weekRow}>
-                          <Text style={styles.weekLabel}>S{wi + 1}</Text>
-                          <TextInput
-                            value={text}
-                            onChangeText={(value) =>
-                              updateExercise(si, exercise.id, (e) => ({
-                                ...e,
-                                weeks: e.weeks.map((w, i) => (i === wi ? value : w)),
-                              }))
-                            }
-                            style={styles.weekInput}
-                          />
-                          {!perSet && (
-                            <TextInput
-                              value={loads[0] ?? ''}
-                              onChangeText={(value) => setLoad(si, exercise.id, wi, 0, value)}
-                              style={styles.loadInput}
-                            />
-                          )}
-                          <Pressable
-                            hitSlop={8}
-                            onPress={() => togglePerSet(si, exercise.id, wi)}
-                            accessibilityLabel={
-                              perSet ? 'Même charge pour toutes les séries' : 'Charge par série'
-                            }
-                            style={[styles.perSetBtn, perSet && styles.perSetBtnOn]}
-                          >
-                            <Text style={[styles.perSetText, perSet && styles.perSetTextOn]}>
-                              {perSet ? '≠' : '='}
-                            </Text>
-                          </Pressable>
-                        </View>
+                <View style={styles.weekCell}>
+                  <View style={styles.weekRow}>
+                    <TextInput
+                      value={exercise.weeks[week - 1] ?? ''}
+                      onChangeText={(value) =>
+                        updateExercise(si, exercise.id, (e) => ({
+                          ...e,
+                          weeks: e.weeks.map((w, i) => (i === week - 1 ? value : w)),
+                        }))
+                      }
+                      style={styles.weekInput}
+                    />
+                    {(exercise.loads[week - 1]?.length ?? 0) <= 1 && (
+                      <TextInput
+                        value={exercise.loads[week - 1]?.[0] ?? ''}
+                        onChangeText={(value) => setLoad(si, exercise.id, week - 1, 0, value)}
+                        style={styles.loadInput}
+                      />
+                    )}
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => togglePerSet(si, exercise.id, week - 1)}
+                      accessibilityLabel={
+                        (exercise.loads[week - 1]?.length ?? 0) > 1
+                          ? 'Même charge pour toutes les séries'
+                          : 'Charge par série'
+                      }
+                      style={[
+                        styles.perSetBtn,
+                        (exercise.loads[week - 1]?.length ?? 0) > 1 && styles.perSetBtnOn,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.perSetText,
+                          (exercise.loads[week - 1]?.length ?? 0) > 1 && styles.perSetTextOn,
+                        ]}
+                      >
+                        {(exercise.loads[week - 1]?.length ?? 0) > 1 ? '≠' : '='}
+                      </Text>
+                    </Pressable>
+                  </View>
 
-                        {perSet && (
-                          <View style={styles.loadGrid}>
-                            {Array.from({ length: exercise.sets }, (_, k) => (
-                              <View key={k} style={styles.loadCell}>
-                                <Text style={styles.loadCellLabel}>{k + 1}</Text>
-                                <TextInput
-                                  value={loads[k] ?? ''}
-                                  onChangeText={(value) => setLoad(si, exercise.id, wi, k, value)}
-                                  style={styles.loadCellInput}
-                                />
-                              </View>
-                            ))}
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
+                  {(exercise.loads[week - 1]?.length ?? 0) > 1 && (
+                    <View style={styles.loadGrid}>
+                      {Array.from({ length: exercise.sets }, (_, k) => (
+                        <View key={k} style={styles.loadCell}>
+                          <Text style={styles.loadCellLabel}>{k + 1}</Text>
+                          <TextInput
+                            value={exercise.loads[week - 1]?.[k] ?? ''}
+                            onChangeText={(value) => setLoad(si, exercise.id, week - 1, k, value)}
+                            style={styles.loadCellInput}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
               </View>
             ))}
@@ -379,10 +392,6 @@ export default function EditProgram() {
 
         <Button title="+ Ajouter une séance" variant="ghost" onPress={addSession} />
 
-        <Text style={styles.hint}>
-          Seule la semaine 1 est nécessaire : si une semaine est vide, la dernière consigne
-          renseignée est reprise.
-        </Text>
         <Pressable onPress={() => router.push('/transfer')} hitSlop={8} style={styles.textLink}>
           <Text style={styles.textLinkLabel}>Copier / coller en texte</Text>
         </Pressable>
@@ -422,34 +431,6 @@ function SetsStepper({ value, onChange }: { value: number; onChange: (v: number)
   );
 }
 
-function NumberField({
-  label,
-  value,
-  onChangeText,
-  onBlur,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  onBlur: () => void;
-}) {
-  return (
-    <View style={styles.numberField}>
-      <Text style={styles.numberLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        onBlur={onBlur}
-        onSubmitEditing={onBlur}
-        keyboardType="number-pad"
-        inputMode="numeric"
-        selectTextOnFocus
-        style={styles.numberInput}
-      />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   headerBtns: { flexDirection: 'row', gap: spacing.md, marginRight: spacing.md },
@@ -462,6 +443,33 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   row: { flexDirection: 'row', gap: spacing.md },
+  weekTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  weekTab: {
+    minWidth: 46,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  weekTabOn: { backgroundColor: colors.pinkDeep, borderColor: colors.pinkDeep },
+  weekTabText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.textMuted },
+  weekTabTextOn: { color: colors.white },
+  weekTabGhost: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekTabGhostText: { fontFamily: fonts.bodyBold, fontSize: 20, color: colors.pinkDeep },
   numberField: {
     flex: 1,
     backgroundColor: colors.surface,

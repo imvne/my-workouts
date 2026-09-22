@@ -14,6 +14,13 @@ import {
 } from '@/store/programStore';
 import type { ProgramProgress } from '@/types/program';
 
+/** « 60 kg » si toutes les séries partagent la charge, sinon « 60 · 65 · 70 ». */
+function summarizeLoads(exercise: Parameters<typeof loadsForWeek>[0], week: number): string {
+  const arr = loadsForWeek(exercise, week).filter(Boolean);
+  if (arr.length === 0) return '';
+  return new Set(arr).size === 1 ? arr[0] : arr.join(' · ');
+}
+
 export default function Position() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -98,15 +105,25 @@ export default function Position() {
 
         return (
           <View key={week} style={styles.week}>
-            <Row
-              label={`Semaine ${week}`}
-              checked={allDone(wKeys)}
-              current={isCurrent(week)}
-              open={wOpen}
-              level={0}
-              onToggle={() => setOpenWeek(wOpen ? null : week)}
-              onCheck={() => toggle(wKeys)}
-            />
+            <View style={[styles.weekBar, wOpen && styles.weekBarOpen]}>
+              <Pressable
+                hitSlop={8}
+                onPress={() => toggle(wKeys)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: allDone(wKeys) }}
+                accessibilityLabel={`Semaine ${week}`}
+                style={[styles.weekCheck, allDone(wKeys) && styles.weekCheckDone]}
+              >
+                {allDone(wKeys) && <Text style={styles.weekCheckMark}>✓</Text>}
+              </Pressable>
+              <Pressable onPress={() => setOpenWeek(wOpen ? null : week)} style={styles.rowLabel}>
+                <Text style={styles.weekKicker}>Semaine</Text>
+                <Text style={styles.weekNumber}>{week}</Text>
+              </Pressable>
+              <Pressable onPress={() => setOpenWeek(wOpen ? null : week)} hitSlop={8}>
+                <Text style={[styles.weekChevron, wOpen && styles.chevronOpen]}>›</Text>
+              </Pressable>
+            </View>
 
             {wOpen &&
               sessions.map((session, si) => {
@@ -138,7 +155,7 @@ export default function Position() {
                           <View key={exercise.id}>
                             <Row
                               label={exercise.name}
-                              sub={[difficultyFor(exercise, week), loadsForWeek(exercise, week).join(' · ')]
+                              sub={[difficultyFor(exercise, week), summarizeLoads(exercise, week)]
                                 .filter(Boolean)
                                 .join(' — ')}
                               checked={eDone}
@@ -263,11 +280,52 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   week: {
-    backgroundColor: colors.surface,
     borderRadius: radii.lg,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: spacing.xs,
+    paddingBottom: spacing.xs,
+    overflow: 'hidden',
+  },
+  weekBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.backgroundAlt,
+  },
+  weekBarOpen: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  weekCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: colors.textLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekCheckDone: { backgroundColor: colors.pinkDeep, borderColor: colors.pinkDeep },
+  weekCheckMark: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.white },
+  weekKicker: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  weekNumber: {
+    fontFamily: fonts.displayBold,
+    fontSize: 26,
+    lineHeight: 28,
+    letterSpacing: -1,
+    color: colors.text,
+  },
+  weekChevron: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 22,
+    color: colors.textMuted,
+    paddingHorizontal: spacing.xs,
   },
   row: {
     flexDirection: 'row',

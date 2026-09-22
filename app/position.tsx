@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import {
-  difficultyFor,
   doneKey,
   loadsForWeek,
   normalizeProgram,
@@ -174,7 +173,6 @@ export default function Position() {
                                 summarize(repsForWeek(exercise, week)) &&
                                   `${summarize(repsForWeek(exercise, week))} reps`,
                                 summarize(loadsForWeek(exercise, week)),
-                                difficultyFor(exercise, week),
                               ]
                                 .filter(Boolean)
                                 .join(' — ')}

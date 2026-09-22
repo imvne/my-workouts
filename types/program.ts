@@ -6,8 +6,6 @@ export type ProgramExercise = {
   reps: string[][];
   /** loads[i] = charges de la semaine i+1 : une seule valeur = même charge pour toutes les séries. */
   loads: string[][];
-  /** weeks[i] = difficulté / consigne pour la semaine i+1. Seule la semaine 1 est requise. */
-  weeks: string[];
 };
 
 export type ProgramSession = {

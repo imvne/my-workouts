@@ -68,7 +68,6 @@ export function programToCsv(
     'titre',
     'exo',
     'séries',
-    ...Array.from({ length: program.weeks }, (_, i) => `S${i + 1}`),
     ...Array.from({ length: program.weeks }, (_, i) => `C${i + 1}`),
     ...Array.from({ length: program.weeks }, (_, i) => `R${i + 1}`),
   ];
@@ -84,7 +83,6 @@ export function programToCsv(
           quote(s.title),
           quote(e.name),
           String(e.sets),
-          ...e.weeks.map(quote),
           ...loads.map(quote),
           ...reps.map(quote),
         ].join(SEP),
@@ -119,10 +117,11 @@ export function csvToProgram(text: string): {
   const header = splitLine(lines[0], sep).map((h) => h.trim().toLowerCase());
   const hasHeader = header[0] === 'séance' || header[0] === 'seance';
   const dataLines = hasHeader ? lines.slice(1) : lines;
-  const weekCols = hasHeader ? header.filter((h) => /^s\d+$/.test(h)).length : 0;
+  // Les anciens fichiers avaient des colonnes S1… (texte libre) : on les saute.
+  const noteCols = hasHeader ? header.filter((h) => /^s\d+$/.test(h)).length : 0;
   const loadCols = hasHeader ? header.filter((h) => /^c\d+$/.test(h)).length : 0;
   const repCols = hasHeader ? header.filter((h) => /^r\d+$/.test(h)).length : 0;
-  let weeks = meta.weeks || weekCols || 1;
+  const weeks = meta.weeks || Math.max(noteCols, loadCols, repCols) || 1;
 
   const sessions = new Map<number, ProgramSession>();
   for (const line of dataLines) {
@@ -132,13 +131,10 @@ export function csvToProgram(text: string): {
     if (Number.isNaN(index) || !name) continue;
     const sets = Math.max(1, parseInt(cols[3], 10) || DEFAULT_SETS);
     const rest = cols.slice(4).map((w) => w.trim());
-    const nbWeeks = weekCols || rest.length;
-    const weekTexts = rest.slice(0, nbWeeks);
-    const loadTexts = loadCols ? rest.slice(nbWeeks, nbWeeks + loadCols) : [];
+    const loadTexts = loadCols ? rest.slice(noteCols, noteCols + loadCols) : [];
     const repTexts = repCols
-      ? rest.slice(nbWeeks + loadCols, nbWeeks + loadCols + repCols)
+      ? rest.slice(noteCols + loadCols, noteCols + loadCols + repCols)
       : [];
-    weeks = Math.max(weeks, weekTexts.length);
     if (!sessions.has(index)) {
       sessions.set(index, {
         id: createId('s'),
@@ -150,14 +146,13 @@ export function csvToProgram(text: string): {
       id: createId('ex'),
       name,
       sets,
-      weeks: weekTexts,
       loads: loadTexts.map((v) => (v ? v.split('|') : [])),
       reps: repTexts.map((v) => (v ? v.split('|') : [])),
     });
   }
   if (sessions.size === 0)
     throw new Error(
-      `Aucun exo reconnu (${dataLines.length} ligne(s) lue(s)). Format attendu : séance;titre;exo;séries;S1;S2…;C1;C2…`,
+      `Aucun exo reconnu (${dataLines.length} ligne(s) lue(s)). Format attendu : séance;titre;exo;séries;C1;C2…;R1;R2…`,
     );
 
   const program: Program = {
@@ -168,7 +163,6 @@ export function csvToProgram(text: string): {
         ...s,
         exercises: s.exercises.map((e) => ({
           ...e,
-          weeks: Array.from({ length: weeks }, (_, i) => e.weeks[i] ?? ''),
           loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
           reps: Array.from({ length: weeks }, (_, i) => e.reps[i] ?? []),
         })),

@@ -27,6 +27,11 @@ import {
 } from '@/store/programStore';
 import type { Program, ProgramExercise, ProgramSession } from '@/types/program';
 
+function trimSeries(values: string[]): string[] {
+  const trimmed = values.map((v) => v.trim());
+  return trimmed.some(Boolean) ? trimmed : [];
+}
+
 function resizeWeeks(program: Program, weeks: number): Program {
   return {
     weeks,
@@ -34,8 +39,8 @@ function resizeWeeks(program: Program, weeks: number): Program {
       ...s,
       exercises: s.exercises.map((e) => ({
         ...e,
-        weeks: Array.from({ length: weeks }, (_, i) => e.weeks[i] ?? ''),
         loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
+        reps: Array.from({ length: weeks }, (_, i) => e.reps[i] ?? []),
       })),
     })),
   };
@@ -197,11 +202,8 @@ export default function EditProgram() {
             ...e,
             name: e.name.trim(),
             sets: Math.max(1, e.sets || 1),
-            weeks: e.weeks.map((w) => w.trim()),
-            loads: e.loads.map((a) => {
-              const trimmed = a.map((v) => v.trim());
-              return trimmed.some(Boolean) ? trimmed : [];
-            }),
+            loads: e.loads.map(trimSeries),
+            reps: e.reps.map(trimSeries),
           })),
       })),
     };
@@ -411,19 +413,6 @@ export default function EditProgram() {
                         </Text>
                       </Pressable>
 
-                      <View style={styles.noteRow}>
-                        <Text style={styles.fieldTag}>Note</Text>
-                        <TextInput
-                          value={exercise.weeks[wi] ?? ''}
-                          onChangeText={(value) =>
-                            updateExercise(si, exercise.id, (e) => ({
-                              ...e,
-                              weeks: e.weeks.map((w, i) => (i === wi ? value : w)),
-                            }))
-                          }
-                          style={styles.weekInput}
-                        />
-                      </View>
                     </View>
                   );
                 })()}

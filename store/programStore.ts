@@ -16,7 +16,6 @@ export function newExercise(weeks: number): ProgramExercise {
     sets: DEFAULT_SETS,
     reps: Array.from({ length: weeks }, () => []),
     loads: Array.from({ length: weeks }, () => []),
-    weeks: Array.from({ length: weeks }, () => ''),
   };
 }
 
@@ -89,20 +88,6 @@ export function repFor(exercise: ProgramExercise, week: number, setIndex: number
   return seriesValue(repsForWeek(exercise, week), setIndex);
 }
 
-/** Consigne de la semaine demandée, sinon la dernière semaine renseignée avant. */
-export function difficultyFor(exercise: ProgramExercise, week: number): string {
-  for (let i = Math.min(week, exercise.weeks.length) - 1; i >= 0; i--) {
-    const text = exercise.weeks[i]?.trim();
-    if (text) return text;
-  }
-  return '';
-}
-
-/** Clé d'un exo fait : semaine + ids de séance et d'exo (stable si on réordonne). */
-export function doneKey(week: number, sessionId: string, exerciseId: string): string {
-  return `${week}:${sessionId}:${exerciseId}`;
-}
-
 type ProgramState = {
   program: Program | null;
   progress: ProgramProgress;
@@ -118,6 +103,11 @@ type ProgramState = {
   startSession: () => void;
   setDone: (keys: string[], value: boolean) => void;
 };
+
+/** Clé d'un exo fait : semaine + ids de séance et d'exo (stable si on réordonne). */
+export function doneKey(week: number, sessionId: string, exerciseId: string): string {
+  return `${week}:${sessionId}:${exerciseId}`;
+}
 
 function sameTitle(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -155,7 +145,8 @@ function mergePrograms(
       ...s,
       exercises: s.exercises.map((e) => ({
         ...e,
-        weeks: Array.from({ length: weeks }, (_, i) => e.weeks[i] ?? ''),
+        loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
+        reps: Array.from({ length: weeks }, (_, i) => e.reps[i] ?? []),
       })),
     })),
   };

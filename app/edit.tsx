@@ -44,6 +44,8 @@ function resizeWeeks(program: Program, weeks: number): Program {
 export default function EditProgram() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Ouvert directement par URL (PWA) : pas d'historique, on revient au tunnel.
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
   const saved = useProgramStore((s) => s.program);
   const saveProgram = useProgramStore((s) => s.saveProgram);
   const progress = useProgramStore((s) => s.progress);
@@ -188,7 +190,7 @@ export default function EditProgram() {
       return;
     }
     saveProgram(cleaned);
-    router.back();
+    goBack();
   };
 
   return (

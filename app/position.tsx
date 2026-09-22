@@ -24,6 +24,8 @@ function summarizeLoads(exercise: Parameters<typeof loadsForWeek>[0], week: numb
 export default function Position() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Ouvert directement par URL (PWA) : pas d'historique, on revient au tunnel.
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
   const rawProgram = useProgramStore((s) => s.program);
   const progress = useProgramStore((s) => s.progress);
   const done = useProgramStore((s) => s.done);
@@ -102,7 +104,7 @@ export default function Position() {
           headerLeft: () => (
             <Pressable
               hitSlop={12}
-              onPress={() => router.back()}
+              onPress={goBack}
               accessibilityLabel="Retour"
               style={styles.backBtn}
             >
@@ -217,7 +219,7 @@ export default function Position() {
 
       <Button
         title={`Continuer semaine ${progress.week} · ${sessions[progress.session]?.title ?? ''}`}
-        onPress={() => router.back()}
+        onPress={goBack}
         style={styles.back}
       />
     </ScrollView>

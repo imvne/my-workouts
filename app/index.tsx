@@ -102,9 +102,7 @@ export default function Home() {
         <Stack.Screen options={{ headerLeft, headerRight }} />
         {menu}
         <Text style={styles.emptyTitle}>Ton espace est vide</Text>
-        <Text style={styles.emptyText}>
-          Crée ta prog du bloc : semaines, séances, exos. Ensuite tu enchaînes les exos un par un.
-        </Text>
+
         <Button title="Créer ma prog" onPress={() => router.push('/edit')} />
       </View>
     );
@@ -374,13 +372,6 @@ const styles = StyleSheet.create({
     fontSize: 32,
     letterSpacing: -1,
     color: colors.text,
-  },
-  emptyText: {
-    fontFamily: fonts.body,
-    fontSize: 16,
-    lineHeight: 24,
-    color: colors.textMuted,
-    marginBottom: spacing.md,
   },
 
   screen: {

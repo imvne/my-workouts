@@ -85,12 +85,6 @@ export default function Transfer() {
           </View>
         )}
 
-        <Text style={styles.hint}>
-          {canUseFiles
-            ? 'Ou par texte : copie-le pour l’envoyer ailleurs, colle un texte au même format puis « Importer ce texte ».'
-            : 'Copie ce texte pour le garder ou l’envoyer sur un autre appareil. Colle un texte au même format puis « Importer » pour remplacer ta prog et ta progression.'}
-        </Text>
-
         <View style={styles.row}>
           <Button
             title={copied ? 'Copié ✓' : 'Copier'}
@@ -130,12 +124,6 @@ export default function Transfer() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
-  hint: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.textMuted,
-  },
   row: { flexDirection: 'row', gap: spacing.sm },
   textarea: {
     minHeight: 320,

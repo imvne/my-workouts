@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -97,8 +97,20 @@ export default function Position() {
     <ScrollView
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
     >
-      <Text style={styles.hint}>Coche ce qui est fait, décoche pour y revenir. Le nom déplie.</Text>
-
+      <Stack.Screen
+        options={{
+          headerLeft: () => (
+            <Pressable
+              hitSlop={12}
+              onPress={() => router.back()}
+              accessibilityLabel="Retour"
+              style={styles.backBtn}
+            >
+              <Text style={styles.backArrow}>←</Text>
+            </Pressable>
+          ),
+        }}
+      />
       {Array.from({ length: program.weeks }, (_, wi) => wi + 1).map((week) => {
         const wKeys = keysOfWeek(week);
         const wOpen = openWeek === week;
@@ -270,15 +282,10 @@ function Row({
 const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.sm },
   back: { marginTop: spacing.md },
+  backBtn: { marginLeft: spacing.md, paddingVertical: spacing.xs, paddingRight: spacing.sm },
+  backArrow: { fontFamily: fonts.bodyBold, fontSize: 24, lineHeight: 28, color: colors.text },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { fontFamily: fonts.body, color: colors.textMuted },
-  hint: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
   week: {
     borderRadius: radii.lg,
     backgroundColor: colors.surface,

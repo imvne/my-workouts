@@ -19,55 +19,54 @@ import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { canUseFiles, downloadCsv, pickCsv } from '@/lib/csvFile';
 import { csvToProgram, programToCsv } from '@/lib/programCsv';
 import {
+  cloneExercise,
+  cloneSession,
+  cloneWeek,
   newExercise,
   newProgram,
   newSession,
-  normalizeProgram,
   useProgramStore,
 } from '@/store/programStore';
 import type { Program, ProgramExercise, ProgramSession } from '@/types/program';
+
+function move<T>(list: T[], from: number, dir: -1 | 1): T[] {
+  const to = from + dir;
+  if (to < 0 || to >= list.length) return list;
+  const next = [...list];
+  [next[from], next[to]] = [next[to], next[from]];
+  return next;
+}
 
 function trimSeries(values: string[]): string[] {
   const trimmed = values.map((v) => v.trim());
   return trimmed.some(Boolean) ? trimmed : [];
 }
 
-function resizeWeeks(program: Program, weeks: number): Program {
-  return {
-    weeks,
-    sessions: program.sessions.map((s) => ({
-      ...s,
-      exercises: s.exercises.map((e) => ({
-        ...e,
-        loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
-        reps: Array.from({ length: weeks }, (_, i) => e.reps[i] ?? []),
-      })),
-    })),
-  };
-}
-
 export default function EditProgram() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // Ouvert directement par URL (PWA) : pas d'historique, on revient au tunnel.
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
+
   const saved = useProgramStore((s) => s.program);
   const saveProgram = useProgramStore((s) => s.saveProgram);
   const progress = useProgramStore((s) => s.progress);
   const done = useProgramStore((s) => s.done);
   const importProgram = useProgramStore((s) => s.importProgram);
 
-  const [program, setProgram] = useState<Program>(() =>
-    saved ? normalizeProgram(saved) : newProgram(),
-  );
-  const [week, setWeek] = useState(1); // semaine en cours d'édition (1-based)
-  // Séances déjà remplies : repliées au départ, on les ouvre si besoin.
+  const [program, setProgram] = useState<Program>(() => saved ?? newProgram());
+  const [wi, setWi] = useState(() => Math.min(progress.week - 1, (saved?.weeks.length ?? 1) - 1));
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () =>
       new Set(
-        program.sessions.filter((x) => x.exercises.some((e) => e.name.trim())).map((x) => x.id),
+        (saved?.weeks[0]?.sessions ?? [])
+          .filter((x) => x.exercises.some((e) => e.name.trim()))
+          .map((x) => x.id),
       ),
   );
+
+  const week = program.weeks[wi] ?? program.weeks[0];
+  const sessions = week?.sessions ?? [];
+
   const toggleCollapsed = (id: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -76,39 +75,63 @@ export default function EditProgram() {
       return next;
     });
 
+  const updateWeek = (patch: (sessions: ProgramSession[]) => ProgramSession[]) =>
+    setProgram((p) => ({
+      ...p,
+      weeks: p.weeks.map((w, i) => (i === wi ? { ...w, sessions: patch(w.sessions) } : w)),
+    }));
+
+  const updateSession = (si: number, patch: (s: ProgramSession) => ProgramSession) =>
+    updateWeek((list) => list.map((s, i) => (i === si ? patch(s) : s)));
+
+  const updateExercise = (si: number, id: string, patch: (e: ProgramExercise) => ProgramExercise) =>
+    updateSession(si, (s) => ({
+      ...s,
+      exercises: s.exercises.map((e) => (e.id === id ? patch(e) : e)),
+    }));
+
   const addWeek = () =>
     setProgram((p) => {
-      const n = Math.min(12, p.weeks + 1);
-      setWeek(n);
-      return resizeWeeks(p, n);
+      const source = p.weeks[wi];
+      setWi(p.weeks.length);
+      return { weeks: [...p.weeks, source ? cloneWeek(source) : p.weeks[0]] };
     });
 
   const removeWeek = () =>
     setProgram((p) => {
-      const n = Math.max(1, p.weeks - 1);
-      setWeek((w) => Math.min(w, n));
-      return resizeWeeks(p, n);
+      if (p.weeks.length <= 1) return p;
+      setWi(Math.max(0, wi - 1));
+      return { weeks: p.weeks.filter((_, i) => i !== wi) };
     });
-  const addSession = () =>
-    setProgram((p) => ({ ...p, sessions: [...p.sessions, newSession(p.weeks, p.sessions.length)] }));
-  const removeSession = (id: string) =>
-    setProgram((p) => ({ ...p, sessions: p.sessions.filter((x) => x.id !== id) }));
 
-  const updateSession = (index: number, patch: (s: ProgramSession) => ProgramSession) =>
-    setProgram((p) => ({
-      ...p,
-      sessions: p.sessions.map((s, i) => (i === index ? patch(s) : s)),
-    }));
+  const setSeries = (si: number, id: string, field: 'reps' | 'loads', k: number, value: string) =>
+    updateExercise(si, id, (e) => {
+      const next = [...e[field]];
+      while (next.length <= k) next.push('');
+      next[k] = value;
+      return { ...e, [field]: next };
+    });
 
-  const updateExercise = (
-    sessionIndex: number,
-    exerciseId: string,
-    patch: (e: ProgramExercise) => ProgramExercise,
-  ) =>
-    updateSession(sessionIndex, (s) => ({
-      ...s,
-      exercises: s.exercises.map((e) => (e.id === exerciseId ? patch(e) : e)),
-    }));
+  /** Bascule reps ET charges entre « commun à toutes les séries » et « une valeur par série ». */
+  const togglePerSet = (si: number, id: string) =>
+    updateExercise(si, id, (e) => {
+      const flip = (arr: string[]) =>
+        arr.length > 1
+          ? [arr.find(Boolean) ?? '']
+          : Array.from({ length: e.sets }, () => arr[0] ?? '');
+      return { ...e, reps: flip(e.reps), loads: flip(e.loads) };
+    });
+
+  const setSets = (si: number, id: string, sets: number) => {
+    const fit = (a: string[]) =>
+      a.length > 1 ? Array.from({ length: sets }, (_, k) => a[k] ?? '') : a;
+    updateExercise(si, id, (e) => ({ ...e, sets, reps: fit(e.reps), loads: fit(e.loads) }));
+  };
+
+  const notify = (title: string, message: string) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n${message}`);
+    else Alert.alert(title, message);
+  };
 
   const onExport = () => {
     if (!canUseFiles) return router.push('/transfer');
@@ -122,96 +145,43 @@ export default function EditProgram() {
     try {
       const parsed = csvToProgram(content);
       importProgram(parsed.program, parsed.progress, parsed.done);
-      // L'éditeur garde sa copie locale : on la remplace pour ne pas réécrire l'ancienne prog.
-      const fresh = normalizeProgram(parsed.program);
-      setProgram(fresh);
-      setWeek(1);
-      const exos = fresh.sessions.reduce((n, x) => n + x.exercises.length, 0);
-      const first = fresh.sessions[0]?.exercises[0]?.name ?? '';
-      const msg = `${fresh.sessions.length} séance(s), ${exos} exo(s). Premier exo : ${first}`;
-      if (Platform.OS === 'web') window.alert(`Prog importée\n${msg}`);
-      else Alert.alert('Prog importée', msg);
-      router.dismissTo('/');
+      const fresh = useProgramStore.getState().program;
+      if (fresh) {
+        setProgram(fresh);
+        setWi(0);
+      }
+      const exos = parsed.program.weeks[0]?.sessions.reduce((n, s) => n + s.exercises.length, 0) ?? 0;
+      notify('Prog importée', `${parsed.program.weeks.length} semaine(s), ${exos} exo(s) en S1.`);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (Platform.OS === 'web') window.alert(`Import impossible\n${msg}`);
-      else Alert.alert('Import impossible', msg);
+      notify('Import impossible', e instanceof Error ? e.message : String(e));
     }
-  };
-
-  const moveExercise = (si: number, ei: number, dir: -1 | 1) =>
-    updateSession(si, (sess) => {
-      const exercises = [...sess.exercises];
-      const target = ei + dir;
-      if (target < 0 || target >= exercises.length) return sess;
-      [exercises[ei], exercises[target]] = [exercises[target], exercises[ei]];
-      return { ...sess, exercises };
-    });
-
-  const setSeries = (
-    si: number,
-    id: string,
-    field: 'reps' | 'loads',
-    wi: number,
-    k: number,
-    value: string,
-  ) =>
-    updateExercise(si, id, (e) => {
-      const next = e[field].map((a) => [...a]);
-      while (next.length <= wi) next.push([]);
-      while (next[wi].length <= k) next[wi].push('');
-      next[wi][k] = value;
-      return { ...e, [field]: next };
-    });
-
-  /** Bascule reps ET charges entre « commun à toutes les séries » et « une valeur par série ». */
-  const togglePerSet = (si: number, id: string, wi: number) =>
-    updateExercise(si, id, (e) => {
-      const expand = (list: string[][]) => {
-        const next = list.map((a) => [...a]);
-        while (next.length <= wi) next.push([]);
-        const cur = next[wi];
-        next[wi] =
-          cur.length > 1
-            ? [cur.find(Boolean) ?? '']
-            : Array.from({ length: e.sets }, () => cur[0] ?? '');
-        return next;
-      };
-      return { ...e, reps: expand(e.reps), loads: expand(e.loads) };
-    });
-
-  const setSets = (si: number, id: string, sets: number) => {
-    const fit = (a: string[]) => (a.length > 1 ? Array.from({ length: sets }, (_, k) => a[k] ?? '') : a);
-    return updateExercise(si, id, (e) => ({
-      ...e,
-      sets,
-      reps: e.reps.map(fit),
-      loads: e.loads.map(fit),
-    }));
   };
 
   const onSave = () => {
     const cleaned: Program = {
-      ...program,
-      sessions: program.sessions.map((s) => ({
-        ...s,
-        title: s.title.trim(),
-        exercises: s.exercises
-          .filter((e) => e.name.trim())
-          .map((e) => ({
-            ...e,
-            name: e.name.trim(),
-            sets: Math.max(1, e.sets || 1),
-            loads: e.loads.map(trimSeries),
-            reps: e.reps.map(trimSeries),
-          })),
+      weeks: program.weeks.map((w) => ({
+        ...w,
+        sessions: w.sessions.map((s) => ({
+          ...s,
+          title: s.title.trim() || 'Séance',
+          exercises: s.exercises
+            .filter((e) => e.name.trim())
+            .map((e) => ({
+              ...e,
+              name: e.name.trim(),
+              sets: Math.max(1, e.sets || 1),
+              reps: trimSeries(e.reps),
+              loads: trimSeries(e.loads),
+            })),
+        })),
       })),
     };
-    const total = cleaned.sessions.reduce((n, s) => n + s.exercises.length, 0);
+    const total = cleaned.weeks.reduce(
+      (n, w) => n + w.sessions.reduce((m, s) => m + s.exercises.length, 0),
+      0,
+    );
     if (total === 0) {
-      const msg = 'Ajoute au moins un exo avec un nom.';
-      if (Platform.OS === 'web') window.alert(msg);
-      else Alert.alert('Prog vide', msg);
+      notify('Prog vide', 'Ajoute au moins un exo avec un nom.');
       return;
     }
     saveProgram(cleaned);
@@ -228,7 +198,6 @@ export default function EditProgram() {
         options={{
           headerRight: () => (
             <View style={styles.headerBtns}>
-              {/* ⤓ = faire entrer un CSV dans l'app, ⤒ = sortir / partager ma prog */}
               <Pressable
                 hitSlop={10}
                 onPress={onImportFile}
@@ -240,7 +209,7 @@ export default function EditProgram() {
               <Pressable
                 hitSlop={10}
                 onPress={onExport}
-                accessibilityLabel="Partager ma prog en CSV"
+                accessibilityLabel="Exporter ma prog en CSV"
                 style={styles.headerBtn}
               >
                 <DownloadIcon direction="up" />
@@ -249,207 +218,254 @@ export default function EditProgram() {
           ),
         }}
       />
+
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
       >
         <View style={styles.weekTabs}>
-          {Array.from({ length: program.weeks }, (_, i) => i + 1).map((w) => (
+          {program.weeks.map((w, i) => (
             <Pressable
-              key={w}
-              onPress={() => setWeek(w)}
-              style={[styles.weekTab, w === week && styles.weekTabOn]}
+              key={w.id}
+              onPress={() => setWi(i)}
+              style={[styles.weekTab, i === wi && styles.weekTabOn]}
             >
-              <Text style={[styles.weekTabText, w === week && styles.weekTabTextOn]}>S{w}</Text>
+              <Text style={[styles.weekTabText, i === wi && styles.weekTabTextOn]}>S{i + 1}</Text>
             </Pressable>
           ))}
-          {program.weeks > 1 && (
+          {program.weeks.length > 1 && (
             <Pressable onPress={removeWeek} hitSlop={6} style={styles.weekTabGhost}>
               <Text style={styles.weekTabGhostText}>−</Text>
             </Pressable>
           )}
-          {program.weeks < 12 && (
-            <Pressable onPress={addWeek} hitSlop={6} style={styles.weekTabGhost}>
-              <Text style={styles.weekTabGhostText}>+</Text>
-            </Pressable>
-          )}
+          <Pressable onPress={addWeek} hitSlop={6} style={styles.weekTabGhost}>
+            <Text style={styles.weekTabGhostText}>+</Text>
+          </Pressable>
         </View>
 
-        {program.sessions.map((session, si) => (
-          <View key={session.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <TextInput
-                value={session.title}
-                onChangeText={(title) => updateSession(si, (s) => ({ ...s, title }))}
-                placeholder={`Séance ${si + 1}`}
-                placeholderTextColor={colors.textLight}
-                style={styles.cardTitle}
-              />
-              <Pressable
-                onPress={() => toggleCollapsed(session.id)}
-                hitSlop={10}
-                accessibilityLabel={collapsed.has(session.id) ? 'Déplier' : 'Replier'}
-                style={styles.cardToggle}
-              >
-                <Text style={styles.cardCount}>
-                  {session.exercises.filter((e) => e.name.trim()).length} exo
-                  {session.exercises.filter((e) => e.name.trim()).length > 1 ? 's' : ''}
-                </Text>
-                <Text style={[styles.chevron, !collapsed.has(session.id) && styles.chevronOpen]}>
-                  ›
-                </Text>
-              </Pressable>
-            </View>
-
-            {collapsed.has(session.id) ? null : session.exercises.map((exercise, ei) => (
-              <View key={exercise.id} style={styles.exercise}>
-                <View style={styles.exerciseHeader}>
-                  <Text style={styles.exerciseIndex}>Exo {ei + 1}</Text>
-                  {session.exercises.length > 1 && (
-                    <View style={styles.moveBtns}>
-                      <Pressable
-                        hitSlop={8}
-                        disabled={ei === 0}
-                        onPress={() => moveExercise(si, ei, -1)}
-                        accessibilityLabel="Monter l’exo"
-                        style={[styles.moveBtn, ei === 0 && styles.moveBtnOff]}
-                      >
-                        <Text style={styles.moveBtnText}>↑</Text>
-                      </Pressable>
-                      <Pressable
-                        hitSlop={8}
-                        disabled={ei === session.exercises.length - 1}
-                        onPress={() => moveExercise(si, ei, 1)}
-                        accessibilityLabel="Descendre l’exo"
-                        style={[
-                          styles.moveBtn,
-                          ei === session.exercises.length - 1 && styles.moveBtnOff,
-                        ]}
-                      >
-                        <Text style={styles.moveBtnText}>↓</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                  {session.exercises.length > 1 && (
-                    <Pressable
-                      hitSlop={10}
-                      onPress={() =>
-                        updateSession(si, (s) => ({
-                          ...s,
-                          exercises: s.exercises.filter((e) => e.id !== exercise.id),
-                        }))
-                      }
-                    >
-                      <Text style={styles.remove}>Retirer</Text>
-                    </Pressable>
-                  )}
-                </View>
+        {sessions.map((session, si) => {
+          const isCollapsed = collapsed.has(session.id);
+          const filled = session.exercises.filter((e) => e.name.trim()).length;
+          return (
+            <View key={session.id} style={styles.card}>
+              <View style={styles.cardHeader}>
                 <TextInput
-                  value={exercise.name}
-                  onChangeText={(name) => updateExercise(si, exercise.id, (e) => ({ ...e, name }))}
-                  style={styles.nameInput}
+                  value={session.title}
+                  onChangeText={(title) => updateSession(si, (s) => ({ ...s, title }))}
+                  style={styles.cardTitle}
                 />
-                <SetsStepper
-                  value={exercise.sets}
-                  onChange={(sets) => setSets(si, exercise.id, sets)}
-                />
-                {(() => {
-                  const wi = week - 1;
-                  const reps = exercise.reps[wi] ?? [];
-                  const loads = exercise.loads[wi] ?? [];
-                  const perSet = reps.length > 1 || loads.length > 1;
-                  return (
-                    <View style={styles.weekCell}>
-                      {perSet ? (
-                        <View style={styles.table}>
-                          <View style={styles.tableHead}>
-                            <Text style={[styles.th, styles.thNum]}>Série</Text>
-                            <Text style={styles.th}>Reps</Text>
-                            <Text style={styles.th}>Charge</Text>
+                <Pressable
+                  onPress={() => toggleCollapsed(session.id)}
+                  hitSlop={10}
+                  accessibilityLabel={isCollapsed ? 'Déplier' : 'Replier'}
+                  style={styles.cardToggle}
+                >
+                  <Text style={styles.cardCount}>
+                    {filled} exo{filled > 1 ? 's' : ''}
+                  </Text>
+                  <Text style={[styles.chevron, !isCollapsed && styles.chevronOpen]}>›</Text>
+                </Pressable>
+              </View>
+
+              {!isCollapsed && (
+                <>
+                  {session.exercises.map((exercise, ei) => {
+                    const perSet = exercise.reps.length > 1 || exercise.loads.length > 1;
+                    return (
+                      <View key={exercise.id} style={styles.exercise}>
+                        <View style={styles.exerciseHeader}>
+                          <Text style={styles.exerciseIndex}>Exo {ei + 1}</Text>
+                          <IconBtn
+                            label="Monter"
+                            glyph="↑"
+                            disabled={ei === 0}
+                            onPress={() =>
+                              updateSession(si, (s) => ({
+                                ...s,
+                                exercises: move(s.exercises, ei, -1),
+                              }))
+                            }
+                          />
+                          <IconBtn
+                            label="Descendre"
+                            glyph="↓"
+                            disabled={ei === session.exercises.length - 1}
+                            onPress={() =>
+                              updateSession(si, (s) => ({
+                                ...s,
+                                exercises: move(s.exercises, ei, 1),
+                              }))
+                            }
+                          />
+                          <IconBtn
+                            label="Dupliquer"
+                            glyph="⧉"
+                            onPress={() =>
+                              updateSession(si, (s) => ({
+                                ...s,
+                                exercises: [
+                                  ...s.exercises.slice(0, ei + 1),
+                                  cloneExercise(exercise),
+                                  ...s.exercises.slice(ei + 1),
+                                ],
+                              }))
+                            }
+                          />
+                          <IconBtn
+                            label="Retirer"
+                            glyph="✕"
+                            disabled={session.exercises.length <= 1}
+                            onPress={() =>
+                              updateSession(si, (s) => ({
+                                ...s,
+                                exercises: s.exercises.filter((e) => e.id !== exercise.id),
+                              }))
+                            }
+                          />
+                        </View>
+
+                        <TextInput
+                          value={exercise.name}
+                          onChangeText={(name) => updateExercise(si, exercise.id, (e) => ({ ...e, name }))}
+                          style={styles.nameInput}
+                        />
+
+                        <View style={styles.stepperRow}>
+                          <Text style={styles.fieldTag}>Séries</Text>
+                          <View style={styles.stepper}>
+                            <Pressable
+                              hitSlop={8}
+                              disabled={exercise.sets <= 1}
+                              onPress={() => setSets(si, exercise.id, exercise.sets - 1)}
+                              style={[styles.stepBtn, exercise.sets <= 1 && styles.off]}
+                            >
+                              <Text style={styles.stepBtnText}>−</Text>
+                            </Pressable>
+                            <Text style={styles.stepValue}>{exercise.sets}</Text>
+                            <Pressable
+                              hitSlop={8}
+                              disabled={exercise.sets >= 20}
+                              onPress={() => setSets(si, exercise.id, exercise.sets + 1)}
+                              style={[styles.stepBtn, exercise.sets >= 20 && styles.off]}
+                            >
+                              <Text style={styles.stepBtnText}>+</Text>
+                            </Pressable>
                           </View>
-                          {Array.from({ length: exercise.sets }, (_, k) => (
-                            <View key={k} style={styles.tr}>
-                              <Text style={styles.tdNum}>{k + 1}</Text>
+                        </View>
+
+                        <View style={styles.weekCell}>
+                          {perSet ? (
+                            <View style={styles.table}>
+                              <View style={styles.tableHead}>
+                                <Text style={[styles.th, styles.thNum]}>Série</Text>
+                                <Text style={styles.th}>Reps</Text>
+                                <Text style={styles.th}>Charge</Text>
+                              </View>
+                              {Array.from({ length: exercise.sets }, (_, k) => (
+                                <View key={k} style={styles.tr}>
+                                  <Text style={styles.tdNum}>{k + 1}</Text>
+                                  <TextInput
+                                    value={exercise.reps[k] ?? ''}
+                                    onChangeText={(v) => setSeries(si, exercise.id, 'reps', k, v)}
+                                    style={styles.td}
+                                  />
+                                  <TextInput
+                                    value={exercise.loads[k] ?? ''}
+                                    onChangeText={(v) => setSeries(si, exercise.id, 'loads', k, v)}
+                                    style={styles.td}
+                                  />
+                                </View>
+                              ))}
+                            </View>
+                          ) : (
+                            <View style={styles.weekRow}>
+                              <Text style={styles.fieldTag}>Reps</Text>
                               <TextInput
-                                value={reps[k] ?? ''}
-                                onChangeText={(v) => setSeries(si, exercise.id, 'reps', wi, k, v)}
-                                style={styles.td}
+                                value={exercise.reps[0] ?? ''}
+                                onChangeText={(v) => setSeries(si, exercise.id, 'reps', 0, v)}
+                                style={styles.smallInput}
                               />
+                              <Text style={styles.fieldTag}>Charge</Text>
                               <TextInput
-                                value={loads[k] ?? ''}
-                                onChangeText={(v) => setSeries(si, exercise.id, 'loads', wi, k, v)}
-                                style={styles.td}
+                                value={exercise.loads[0] ?? ''}
+                                onChangeText={(v) => setSeries(si, exercise.id, 'loads', 0, v)}
+                                style={styles.smallInput}
                               />
                             </View>
-                          ))}
+                          )}
+
+                          <Pressable
+                            onPress={() => togglePerSet(si, exercise.id)}
+                            hitSlop={8}
+                            style={styles.detailLink}
+                          >
+                            <Text style={styles.detailLinkText}>
+                              {perSet ? '↥ Même valeur partout' : '↧ Détailler série par série'}
+                            </Text>
+                          </Pressable>
                         </View>
-                      ) : (
-                        <View style={styles.weekRow}>
-                          <Text style={styles.fieldTag}>Reps</Text>
-                          <TextInput
-                            value={reps[0] ?? ''}
-                            onChangeText={(v) => setSeries(si, exercise.id, 'reps', wi, 0, v)}
-                            style={styles.smallInput}
-                          />
-                          <Text style={styles.fieldTag}>Charge</Text>
-                          <TextInput
-                            value={loads[0] ?? ''}
-                            onChangeText={(v) => setSeries(si, exercise.id, 'loads', wi, 0, v)}
-                            style={styles.smallInput}
-                          />
-                        </View>
-                      )}
+                      </View>
+                    );
+                  })}
 
-                      <Pressable
-                        onPress={() => togglePerSet(si, exercise.id, wi)}
-                        hitSlop={8}
-                        style={styles.detailLink}
-                      >
-                        <Text style={styles.detailLinkText}>
-                          {perSet
-                            ? '↥ Même valeur pour toutes les séries'
-                            : '↧ Détailler série par série'}
-                        </Text>
-                      </Pressable>
-
-                    </View>
-                  );
-                })()}
-              </View>
-            ))}
-
-            {!collapsed.has(session.id) && (
-              <>
-                <Pressable
-                  onPress={() =>
-                    updateSession(si, (s) => ({
-                      ...s,
-                      exercises: [...s.exercises, newExercise(program.weeks)],
-                    }))
-                  }
-                  style={({ pressed }) => [styles.addExercise, pressed && styles.pressed]}
-                >
-                  <Text style={styles.addExerciseText}>+ Ajouter un exo</Text>
-                </Pressable>
-                {program.sessions.length > 1 && (
                   <Pressable
-                    onPress={() => removeSession(session.id)}
-                    hitSlop={8}
-                    style={styles.removeSession}
+                    onPress={() =>
+                      updateSession(si, (s) => ({ ...s, exercises: [...s.exercises, newExercise()] }))
+                    }
+                    style={({ pressed }) => [styles.addExercise, pressed && styles.pressed]}
                   >
-                    <Text style={styles.remove}>Retirer la séance</Text>
+                    <Text style={styles.addExerciseText}>+ Ajouter un exo</Text>
                   </Pressable>
-                )}
-              </>
-            )}
-          </View>
-        ))}
 
-        <Button title="+ Ajouter une séance" variant="ghost" onPress={addSession} />
+                  <View style={styles.sessionActions}>
+                    <IconBtn
+                      label="Monter la séance"
+                      glyph="↑"
+                      disabled={si === 0}
+                      onPress={() => updateWeek((list) => move(list, si, -1))}
+                    />
+                    <IconBtn
+                      label="Descendre la séance"
+                      glyph="↓"
+                      disabled={si === sessions.length - 1}
+                      onPress={() => updateWeek((list) => move(list, si, 1))}
+                    />
+                    <IconBtn
+                      label="Dupliquer la séance"
+                      glyph="⧉"
+                      onPress={() =>
+                        updateWeek((list) => [
+                          ...list.slice(0, si + 1),
+                          cloneSession(session),
+                          ...list.slice(si + 1),
+                        ])
+                      }
+                    />
+                    {sessions.length > 1 && (
+                      <Pressable
+                        onPress={() => updateWeek((list) => list.filter((_, i) => i !== si))}
+                        hitSlop={8}
+                        style={styles.removeSession}
+                      >
+                        <Text style={styles.remove}>Retirer la séance</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </>
+              )}
+            </View>
+          );
+        })}
+
+        <Button
+          title="+ Ajouter une séance"
+          variant="ghost"
+          onPress={() => updateWeek((list) => [...list, newSession(list.length)])}
+        />
 
         <Pressable onPress={() => router.push('/transfer')} hitSlop={8} style={styles.textLink}>
-          <Text style={styles.textLinkLabel}>Copier / coller en texte</Text>
+          <Text style={styles.textLinkLabel}>Sauvegarde & import</Text>
         </Pressable>
       </ScrollView>
 
@@ -460,30 +476,27 @@ export default function EditProgram() {
   );
 }
 
-function SetsStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function IconBtn({
+  glyph,
+  label,
+  onPress,
+  disabled,
+}: {
+  glyph: string;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <View style={styles.stepperRow}>
-      <Text style={styles.stepperLabel}>Séries</Text>
-      <View style={styles.stepper}>
-        <Pressable
-          hitSlop={8}
-          disabled={value <= 1}
-          onPress={() => onChange(value - 1)}
-          style={[styles.stepBtn, value <= 1 && styles.stepBtnOff]}
-        >
-          <Text style={styles.stepBtnText}>−</Text>
-        </Pressable>
-        <Text style={styles.stepValue}>{value}</Text>
-        <Pressable
-          hitSlop={8}
-          disabled={value >= 12}
-          onPress={() => onChange(value + 1)}
-          style={[styles.stepBtn, value >= 12 && styles.stepBtnOff]}
-        >
-          <Text style={styles.stepBtnText}>+</Text>
-        </Pressable>
-      </View>
-    </View>
+    <Pressable
+      hitSlop={8}
+      disabled={disabled}
+      onPress={onPress}
+      accessibilityLabel={label}
+      style={[styles.iconBtn, disabled && styles.off]}
+    >
+      <Text style={styles.iconBtnText}>{glyph}</Text>
+    </Pressable>
   );
 }
 
@@ -493,18 +506,9 @@ const styles = StyleSheet.create({
   headerBtn: { paddingVertical: spacing.xs },
   textLink: { alignItems: 'center', paddingVertical: spacing.xs },
   textLinkLabel: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.pinkDeep },
-  content: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
-  },
-  row: { flexDirection: 'row', gap: spacing.md },
-  weekTabs: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    flexWrap: 'wrap',
-  },
+  content: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md },
+
+  weekTabs: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   weekTab: {
     minWidth: 46,
     paddingHorizontal: spacing.sm,
@@ -518,37 +522,9 @@ const styles = StyleSheet.create({
   weekTabOn: { backgroundColor: colors.pinkDeep, borderColor: colors.pinkDeep },
   weekTabText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.textMuted },
   weekTabTextOn: { color: colors.white },
-  weekTabGhost: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  weekTabGhost: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   weekTabGhostText: { fontFamily: fonts.bodyBold, fontSize: 20, color: colors.pinkDeep },
-  numberField: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: 2,
-  },
-  numberLabel: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 12,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  numberInput: {
-    fontFamily: fonts.displayBold,
-    fontSize: 28,
-    color: colors.pinkDeep,
-    padding: 0,
-  },
+
   card: {
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
@@ -576,42 +552,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   chevronOpen: { transform: [{ rotate: '90deg' }] },
-  removeSession: { alignItems: 'center', paddingVertical: spacing.xs },
+
   exercise: {
     gap: spacing.sm,
     paddingTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  exerciseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  moveBtns: { flexDirection: 'row', gap: spacing.xs, marginRight: 'auto' },
-  moveBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-  },
-  moveBtnOff: { opacity: 0.3 },
-  moveBtnText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.pinkDeep },
+  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   exerciseIndex: {
+    flex: 1,
     fontFamily: fonts.bodyMedium,
     fontSize: 12,
     color: colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  remove: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 13,
-    color: colors.pinkDeep,
+  iconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
   },
+  iconBtnText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.pinkDeep },
+  off: { opacity: 0.3 },
+
   nameInput: {
     backgroundColor: colors.background,
     borderRadius: radii.md,
@@ -621,16 +588,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: colors.text,
   },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  stepperLabel: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 13,
-    color: colors.textMuted,
-  },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -638,14 +596,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     paddingHorizontal: spacing.xs,
   },
-  stepBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepBtnOff: { opacity: 0.3 },
+  stepBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   stepBtnText: { fontFamily: fonts.bodyBold, fontSize: 18, color: colors.pinkDeep },
   stepValue: {
     fontFamily: fonts.bodyBold,
@@ -654,30 +605,9 @@ const styles = StyleSheet.create({
     minWidth: 32,
     textAlign: 'center',
   },
-  weeksGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  weekCell: {
-    width: '100%',
-    backgroundColor: colors.background,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.sm + 4,
-  },
-  weekCellFirst: {
-    borderWidth: 1,
-    borderColor: colors.pinkSoft,
-  },
+
+  weekCell: { width: '100%', backgroundColor: colors.background, borderRadius: radii.md, paddingHorizontal: spacing.sm + 4 },
   weekRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, width: '100%' },
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    width: '100%',
-    borderTopWidth: 1,
-    borderTopColor: colors.surface,
-  },
   fieldTag: {
     fontFamily: fonts.bodyMedium,
     fontSize: 12,
@@ -696,12 +626,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   table: { width: '100%', paddingTop: spacing.xs },
-  tableHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
+  tableHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.xs },
   th: {
     flexGrow: 1,
     flexShrink: 1,
@@ -715,13 +640,7 @@ const styles = StyleSheet.create({
   },
   thNum: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: 38 },
   tr: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
-  tdNum: {
-    width: 38,
-    flexShrink: 0,
-    fontFamily: fonts.bodyBold,
-    fontSize: 13,
-    color: colors.pinkDeep,
-  },
+  tdNum: { width: 38, flexShrink: 0, fontFamily: fonts.bodyBold, fontSize: 13, color: colors.pinkDeep },
   td: {
     flexGrow: 1,
     flexShrink: 1,
@@ -737,67 +656,7 @@ const styles = StyleSheet.create({
   },
   detailLink: { alignSelf: 'flex-start', paddingVertical: spacing.xs },
   detailLinkText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.pinkDeep },
-  loadInput: {
-    width: 76,
-    flexShrink: 0,
-    paddingVertical: spacing.sm + 2,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 15,
-    color: colors.text,
-    textAlign: 'right',
-  },
-  perSetBtn: {
-    flexShrink: 0,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  perSetBtnOn: { backgroundColor: colors.pinkDeep },
-  perSetText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.pinkDeep },
-  perSetTextOn: { color: colors.white },
-  loadGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    paddingBottom: spacing.sm,
-    paddingLeft: 22 + spacing.sm,
-  },
-  loadCell: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: colors.surface,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.xs + 2,
-  },
-  loadCellLabel: { fontFamily: fonts.bodyBold, fontSize: 11, color: colors.textLight },
-  loadCellInput: {
-    width: 52,
-    paddingVertical: spacing.xs + 2,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 14,
-    color: colors.text,
-    textAlign: 'center',
-  },
-  weekLabel: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 12,
-    color: colors.pinkDeep,
-    width: 22,
-  },
-  weekInput: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    minWidth: 0,
-    paddingVertical: spacing.sm + 2,
-    fontFamily: fonts.body,
-    fontSize: 15,
-    color: colors.text,
-  },
+
   addExercise: {
     alignItems: 'center',
     paddingVertical: spacing.sm + 2,
@@ -806,20 +665,12 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.pink,
   },
-  addExerciseText: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
-    color: colors.pinkDeep,
-  },
+  addExerciseText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.pinkDeep },
   pressed: { opacity: 0.7 },
-  hint: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.textMuted,
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
-  },
+  sessionActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  removeSession: { marginLeft: 'auto', paddingVertical: spacing.xs },
+  remove: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.pinkDeep },
+
   footer: {
     padding: spacing.md,
     backgroundColor: colors.background,

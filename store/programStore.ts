@@ -3,166 +3,155 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { createId } from '@/lib/format';
-import type { Program, ProgramExercise, ProgramProgress, ProgramSession } from '@/types/program';
+import type {
+  Program,
+  ProgramExercise,
+  ProgramProgress,
+  ProgramSession,
+  ProgramWeek,
+} from '@/types/program';
 
-export const DEFAULT_WEEKS = 4;
-export const DEFAULT_SESSIONS = 4;
 export const DEFAULT_SETS = 3;
 
-export function newExercise(weeks: number): ProgramExercise {
+export function newExercise(): ProgramExercise {
+  return { id: createId('ex'), name: '', sets: DEFAULT_SETS, reps: [], loads: [] };
+}
+
+export function newSession(index: number): ProgramSession {
+  return { id: createId('s'), title: `Séance ${index + 1}`, exercises: [newExercise()] };
+}
+
+export function newWeek(sessions = 1): ProgramWeek {
   return {
-    id: createId('ex'),
-    name: '',
-    sets: DEFAULT_SETS,
-    reps: Array.from({ length: weeks }, () => []),
-    loads: Array.from({ length: weeks }, () => []),
+    id: createId('w'),
+    sessions: Array.from({ length: sessions }, (_, i) => newSession(i)),
   };
 }
 
-export function newSession(weeks: number, index: number): ProgramSession {
-  return { id: createId('s'), title: `Séance ${index + 1}`, exercises: [newExercise(weeks)] };
+export function newProgram(): Program {
+  return { weeks: [newWeek(1)] };
 }
 
-export function newProgram(weeks = DEFAULT_WEEKS, sessions = DEFAULT_SESSIONS): Program {
-  return { weeks, sessions: Array.from({ length: sessions }, (_, i) => newSession(weeks, i)) };
+export function cloneExercise(e: ProgramExercise): ProgramExercise {
+  return { ...e, id: createId('ex'), reps: [...e.reps], loads: [...e.loads] };
 }
 
-/** Programmes sauvegardés avant l'ajout des titres / séries. */
-export function normalizeProgram(program: Program): Program {
-  return {
-    ...program,
-    sessions: program.sessions.map((s, i) => ({
-      ...s,
-      title: s.title || `Séance ${i + 1}`,
-      exercises: s.exercises.map((e) => {
-        const sets = e.sets || DEFAULT_SETS;
-        return {
-          ...e,
-          sets,
-          // une valeur = commune à toutes les séries ; sinon on aligne sur le nombre de séries
-          reps: alignSeries(e.reps, program.weeks, sets),
-          loads: alignSeries(e.loads, program.weeks, sets),
-        };
-      }),
-    })),
-  };
+export function cloneSession(s: ProgramSession): ProgramSession {
+  return { ...s, id: createId('s'), exercises: s.exercises.map(cloneExercise) };
 }
 
-function alignSeries(source: string[][] | undefined, weeks: number, sets: number): string[][] {
-  return Array.from({ length: weeks }, (_, i) => {
-    const arr = source?.[i] ?? [];
-    return arr.length > 1 ? Array.from({ length: sets }, (_, k) => arr[k] ?? '') : arr;
-  });
+export function cloneWeek(w: ProgramWeek): ProgramWeek {
+  return { id: createId('w'), sessions: w.sessions.map(cloneSession) };
 }
 
-/** Valeurs de la semaine demandée, sinon celles de la dernière semaine renseignée avant. */
-function seriesForWeek(source: string[][] | undefined, week: number): string[] {
-  const list = source ?? [];
-  for (let i = Math.min(week, list.length) - 1; i >= 0; i--) {
-    const arr = (list[i] ?? []).map((v) => v.trim());
-    if (arr.some(Boolean)) return arr;
-  }
-  return [];
-}
-
-function seriesValue(arr: string[], setIndex: number): string {
+/** Valeur d'une série : commune s'il n'y en a qu'une, sinon celle de la série. */
+export function valueFor(values: string[] | undefined, setIndex: number): string {
+  const arr = values ?? [];
   if (arr.length === 0) return '';
   return (arr.length === 1 ? arr[0] : (arr[setIndex] ?? '')) || '';
 }
 
-export function loadsForWeek(exercise: ProgramExercise, week: number): string[] {
-  return seriesForWeek(exercise.loads, week);
+/** « 60 kg » si toutes les séries partagent la valeur, sinon « 60 · 65 · 70 ». */
+export function summarize(values: string[] | undefined): string {
+  const arr = (values ?? []).map((v) => v.trim()).filter(Boolean);
+  if (arr.length === 0) return '';
+  return new Set(arr).size === 1 ? arr[0] : arr.join(' · ');
 }
 
-export function repsForWeek(exercise: ProgramExercise, week: number): string[] {
-  return seriesForWeek(exercise.reps, week);
+export function sessionsOf(program: Program, week: number): ProgramSession[] {
+  return program.weeks[week - 1]?.sessions ?? [];
 }
 
-/** Charge à afficher pour une série donnée ('' si aucune). */
-export function loadFor(exercise: ProgramExercise, week: number, setIndex: number): string {
-  return seriesValue(loadsForWeek(exercise, week), setIndex);
-}
-
-/** Répétitions à afficher pour une série donnée ('' si aucune). */
-export function repFor(exercise: ProgramExercise, week: number, setIndex: number): string {
-  return seriesValue(repsForWeek(exercise, week), setIndex);
-}
-
-type ProgramState = {
-  program: Program | null;
-  progress: ProgramProgress;
-  /** Exos cochés, indépendamment de la position (on peut en sauter). */
-  done: Record<string, true>;
-  /** La séance courante a été lancée (sinon on affiche l'écran « Commencer la séance »). */
-  sessionStarted: boolean;
-  saveProgram: (program: Program) => void;
-  /** Fusionne avec la prog existante : les séances de même titre sont remplacées, les autres gardées. */
-  importProgram: (program: Program, progress: ProgramProgress, done?: string[]) => void;
-  clearProgram: () => void;
-  setProgress: (progress: ProgramProgress, started?: boolean) => void;
-  startSession: () => void;
-  setDone: (keys: string[], value: boolean) => void;
-};
-
-/** Clé d'un exo fait : semaine + ids de séance et d'exo (stable si on réordonne). */
-export function doneKey(week: number, sessionId: string, exerciseId: string): string {
-  return `${week}:${sessionId}:${exerciseId}`;
+function clampProgress(program: Program, p: ProgramProgress): ProgramProgress {
+  const week = Math.min(Math.max(1, p.week), Math.max(1, program.weeks.length));
+  const sessions = sessionsOf(program, week).filter((s) => s.exercises.length > 0);
+  const session = Math.min(Math.max(0, p.session), Math.max(0, sessions.length - 1));
+  const exercises = sessions[session]?.exercises ?? [];
+  const exercise = Math.min(Math.max(0, p.exercise), Math.max(0, exercises.length - 1));
+  const sets = exercises[exercise]?.sets ?? 1;
+  const set = Math.min(Math.max(0, p.set ?? 0), Math.max(0, sets - 1));
+  return { week, session, exercise, set };
 }
 
 function sameTitle(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** Ne garde que les clés d'exos qui existent encore. */
-function pruneDone(program: Program, done: Record<string, true>): Record<string, true> {
-  const valid = new Set<string>();
-  for (let week = 1; week <= program.weeks; week++) {
-    for (const s of program.sessions) for (const e of s.exercises) valid.add(doneKey(week, s.id, e.id));
-  }
-  return Object.fromEntries(Object.keys(done).filter((k) => valid.has(k)).map((k) => [k, true]));
+/** Les semaines/séances entrantes remplacent celles de même rang/titre, les autres restent. */
+function mergePrograms(existing: Program, incoming: Program): Program {
+  const weeks = existing.weeks.map((w) => ({ ...w, sessions: [...w.sessions] }));
+  incoming.weeks.forEach((inc, i) => {
+    if (!weeks[i]) {
+      weeks[i] = inc;
+      return;
+    }
+    for (const session of inc.sessions) {
+      const idx = weeks[i].sessions.findIndex((s) => sameTitle(s.title, session.title));
+      if (idx >= 0) weeks[i].sessions[idx] = session;
+      else weeks[i].sessions.push(session);
+    }
+  });
+  return { weeks };
 }
 
-function mergePrograms(
-  existing: Program,
-  incoming: Program,
-): { program: Program; sessionIdMap: Map<string, string> } {
-  const weeks = Math.max(existing.weeks, incoming.weeks);
-  const sessions = existing.sessions.map((s) => ({ ...s }));
-  const sessionIdMap = new Map<string, string>(); // id entrant → id final
-  for (const inc of incoming.sessions) {
-    const idx = sessions.findIndex((s) => sameTitle(s.title, inc.title));
-    if (idx >= 0) {
-      sessions[idx] = { ...sessions[idx], exercises: inc.exercises };
-      sessionIdMap.set(inc.id, sessions[idx].id);
-    } else {
-      sessions.push(inc);
-      sessionIdMap.set(inc.id, inc.id);
-    }
-  }
-  const program: Program = {
-    weeks,
-    sessions: sessions.map((s) => ({
-      ...s,
-      exercises: s.exercises.map((e) => ({
-        ...e,
-        loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
-        reps: Array.from({ length: weeks }, (_, i) => e.reps[i] ?? []),
-      })),
-    })),
-  };
-  return { program, sessionIdMap };
+function prune(program: Program, done: Record<string, true>): Record<string, true> {
+  const ids = new Set<string>();
+  for (const w of program.weeks) for (const s of w.sessions) for (const e of s.exercises) ids.add(e.id);
+  return Object.fromEntries(Object.keys(done).filter((k) => ids.has(k)).map((k) => [k, true]));
 }
+
+type ProgramState = {
+  program: Program | null;
+  progress: ProgramProgress;
+  /** Exos faits, par id : cochables indépendamment. */
+  done: Record<string, true>;
+  /** La séance courante est lancée (sinon écran « Commencer la séance »). */
+  sessionStarted: boolean;
+  saveProgram: (program: Program) => void;
+  importProgram: (program: Program, progress: ProgramProgress, done?: string[]) => void;
+  clearProgram: () => void;
+  setProgress: (progress: ProgramProgress, started?: boolean) => void;
+  startSession: () => void;
+  setDone: (ids: string[], value: boolean) => void;
+};
 
 const initialProgress: ProgramProgress = { week: 1, session: 0, exercise: 0, set: 0 };
 
-function clampProgress(program: Program, p: ProgramProgress): ProgramProgress {
-  const week = Math.min(Math.max(1, p.week), program.weeks);
-  const session = Math.min(Math.max(0, p.session), Math.max(0, program.sessions.length - 1));
-  const count = program.sessions[session]?.exercises.length ?? 0;
-  const exercise = Math.min(Math.max(0, p.exercise), Math.max(0, count - 1));
-  const sets = program.sessions[session]?.exercises[exercise]?.sets ?? 1;
-  const set = Math.min(Math.max(0, p.set ?? 0), Math.max(0, sets - 1));
-  return { week, session, exercise, set };
+/** Ancien format : séances communes à tout le bloc, valeurs par semaine. */
+function migrateV1(state: any): { program: Program | null; done: Record<string, true> } {
+  const old = state?.program;
+  if (!old?.sessions) return { program: null, done: {} };
+  const pickWeek = (list: string[][] | undefined, week: number): string[] => {
+    for (let i = Math.min(week, (list ?? []).length) - 1; i >= 0; i--) {
+      const arr = (list?.[i] ?? []).map((v: string) => v.trim());
+      if (arr.some(Boolean)) return arr;
+    }
+    return [];
+  };
+  const oldDone: Record<string, true> = state.done ?? {};
+  const done: Record<string, true> = {};
+  const weeks: ProgramWeek[] = [];
+  for (let w = 1; w <= Math.max(1, old.weeks ?? 1); w++) {
+    weeks.push({
+      id: createId('w'),
+      sessions: (old.sessions ?? []).map((s: any) => ({
+        id: createId('s'),
+        title: s.title ?? 'Séance',
+        exercises: (s.exercises ?? []).map((e: any) => {
+          const ex: ProgramExercise = {
+            id: createId('ex'),
+            name: e.name ?? '',
+            sets: e.sets || DEFAULT_SETS,
+            reps: pickWeek(e.reps, w),
+            loads: pickWeek(e.loads, w),
+          };
+          if (oldDone[`${w}:${s.id}:${e.id}`]) done[ex.id] = true;
+          return ex;
+        }),
+      })),
+    });
+  }
+  return { program: { weeks }, done };
 }
 
 export const useProgramStore = create<ProgramState>()(
@@ -172,55 +161,54 @@ export const useProgramStore = create<ProgramState>()(
       progress: initialProgress,
       done: {},
       sessionStarted: false,
+
       saveProgram: (program) =>
-        set((state) => {
-          const normalized = normalizeProgram(program);
-          return { program: normalized, progress: clampProgress(normalized, state.progress) };
-        }),
+        set((state) => ({ program, progress: clampProgress(program, state.progress) })),
+
       importProgram: (program, progress, done = []) =>
         set((state) => {
-          const incoming = normalizeProgram(program);
+          const incomingDone = Object.fromEntries(done.map((k) => [k, true as const]));
           if (!state.program) {
             return {
-              program: incoming,
-              progress: clampProgress(incoming, progress),
-              done: pruneDone(incoming, Object.fromEntries(done.map((k) => [k, true]))),
+              program,
+              progress: clampProgress(program, progress),
+              done: prune(program, incomingDone),
               sessionStarted: false,
             };
           }
-          const { program: merged, sessionIdMap } = mergePrograms(
-            normalizeProgram(state.program),
-            incoming,
-          );
-          const nextDone: Record<string, true> = { ...state.done };
-          for (const k of done) {
-            const [week, sid, eid] = k.split(':');
-            const mapped = sessionIdMap.get(sid);
-            if (mapped) nextDone[`${week}:${mapped}:${eid}`] = true;
-          }
+          const merged = mergePrograms(state.program, program);
           return {
             program: merged,
             progress: clampProgress(merged, state.progress),
-            done: pruneDone(merged, nextDone),
+            done: prune(merged, { ...state.done, ...incomingDone }),
           };
         }),
+
       clearProgram: () =>
         set({ program: null, progress: initialProgress, done: {}, sessionStarted: false }),
+
       setProgress: (progress, started = false) => set({ progress, sessionStarted: started }),
       startSession: () => set({ sessionStarted: true }),
-      setDone: (keys, value) =>
+
+      setDone: (ids, value) =>
         set((state) => {
           const done = { ...state.done };
-          for (const k of keys) {
-            if (value) done[k] = true;
-            else delete done[k];
+          for (const id of ids) {
+            if (value) done[id] = true;
+            else delete done[id];
           }
           return { done };
         }),
     }),
     {
       name: 'workouts-program-v1',
+      version: 2,
       storage: createJSONStorage(() => AsyncStorage),
+      migrate: (persisted: any, version) => {
+        if (version >= 2) return persisted;
+        const { program, done } = migrateV1(persisted);
+        return { ...persisted, program, done, sessionStarted: false };
+      },
     },
   ),
 );

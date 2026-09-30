@@ -1,8 +1,9 @@
-import { DEFAULT_SETS } from '@/store/programStore';
 import { createId } from '@/lib/format';
-import type { Program, ProgramProgress, ProgramSession } from '@/types/program';
+import { DEFAULT_SETS } from '@/store/programStore';
+import type { Program, ProgramProgress, ProgramSession, ProgramWeek } from '@/types/program';
 
 const SEP = ';';
+const HEADER = ['semaine', 'séance', 'exo', 'séries', 'reps', 'charges'];
 
 /** Séparateur du fichier : `;` (Excel/Numbers FR), `,` ou tabulation. */
 function detectSep(line: string): string {
@@ -16,10 +17,9 @@ function detectSep(line: string): string {
 }
 
 function quote(value: string): string {
-  return /[;"\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  return /[;,"\n\r\t]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
-/** Parse une ligne CSV (séparateur ;) en gérant les guillemets. */
 function splitLine(line: string, sep = SEP): string[] {
   const out: string[] = [];
   let cur = '';
@@ -30,19 +30,13 @@ function splitLine(line: string, sep = SEP): string[] {
       if (c === '"' && line[i + 1] === '"') {
         cur += '"';
         i++;
-      } else if (c === '"') {
-        inQuotes = false;
-      } else {
-        cur += c;
-      }
-    } else if (c === '"') {
-      inQuotes = true;
-    } else if (c === sep) {
+      } else if (c === '"') inQuotes = false;
+      else cur += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === sep) {
       out.push(cur);
       cur = '';
-    } else {
-      cur += c;
-    }
+    } else cur += c;
   }
   out.push(cur);
   return out;
@@ -53,50 +47,38 @@ export function programToCsv(
   progress: ProgramProgress,
   done: Record<string, true> = {},
 ): string {
-  // Exos cochés en indices (les ids changent à l'import) : semaine:séance:exo
   const doneIdx: string[] = [];
-  for (let week = 1; week <= program.weeks; week++) {
-    program.sessions.forEach((s, si) =>
+  program.weeks.forEach((w, wi) =>
+    w.sessions.forEach((s, si) =>
       s.exercises.forEach((e, ei) => {
-        if (done[`${week}:${s.id}:${e.id}`]) doneIdx.push(`${week}.${si}.${ei}`);
+        if (done[e.id]) doneIdx.push(`${wi + 1}.${si}.${ei}`);
       }),
-    );
-  }
-  const meta = `# weeks=${program.weeks} week=${progress.week} session=${progress.session} exercise=${progress.exercise} set=${progress.set} done=${doneIdx.join(',')}`;
-  const header = [
-    'séance',
-    'titre',
-    'exo',
-    'séries',
-    ...Array.from({ length: program.weeks }, (_, i) => `C${i + 1}`),
-    ...Array.from({ length: program.weeks }, (_, i) => `R${i + 1}`),
-  ];
-  const rows = [meta, header.join(SEP)];
-  program.sessions.forEach((s, si) => {
-    s.exercises.forEach((e) => {
-      // Charges d'une semaine : valeurs séparées par « | » quand elles varient par série.
-      const loads = Array.from({ length: program.weeks }, (_, i) => (e.loads?.[i] ?? []).join('|'));
-      const reps = Array.from({ length: program.weeks }, (_, i) => (e.reps?.[i] ?? []).join('|'));
-      rows.push(
-        [
-          String(si + 1),
-          quote(s.title),
-          quote(e.name),
-          String(e.sets),
-          ...loads.map(quote),
-          ...reps.map(quote),
-        ].join(SEP),
-      );
-    });
-  });
+    ),
+  );
+  const meta = `# v2 week=${progress.week} session=${progress.session} exercise=${progress.exercise} set=${progress.set} done=${doneIdx.join(',')}`;
+  const rows = [meta, HEADER.join(SEP)];
+  program.weeks.forEach((w, wi) =>
+    w.sessions.forEach((s) =>
+      s.exercises.forEach((e) => {
+        rows.push(
+          [
+            String(wi + 1),
+            quote(s.title),
+            quote(e.name),
+            String(e.sets),
+            quote(e.reps.join('|')),
+            quote(e.loads.join('|')),
+          ].join(SEP),
+        );
+      }),
+    ),
+  );
   return rows.join('\n');
 }
 
-export function csvToProgram(text: string): {
-  program: Program;
-  progress: ProgramProgress;
-  done: string[];
-} {
+type Parsed = { program: Program; progress: ProgramProgress; done: string[] };
+
+export function csvToProgram(text: string): Parsed {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -115,59 +97,20 @@ export function csvToProgram(text: string): {
 
   const sep = detectSep(lines[0]);
   const header = splitLine(lines[0], sep).map((h) => h.trim().toLowerCase());
-  const hasHeader = header[0] === 'séance' || header[0] === 'seance';
+  const isV2 = header[0] === 'semaine';
+  const hasHeader = isV2 || header[0] === 'séance' || header[0] === 'seance';
   const dataLines = hasHeader ? lines.slice(1) : lines;
-  // Les anciens fichiers avaient des colonnes S1… (texte libre) : on les saute.
-  const noteCols = hasHeader ? header.filter((h) => /^s\d+$/.test(h)).length : 0;
-  const loadCols = hasHeader ? header.filter((h) => /^c\d+$/.test(h)).length : 0;
-  const repCols = hasHeader ? header.filter((h) => /^r\d+$/.test(h)).length : 0;
-  const weeks = meta.weeks || Math.max(noteCols, loadCols, repCols) || 1;
 
-  const sessions = new Map<number, ProgramSession>();
-  for (const line of dataLines) {
-    const cols = splitLine(line, sep);
-    const index = parseInt(cols[0], 10);
-    const name = (cols[2] ?? '').trim();
-    if (Number.isNaN(index) || !name) continue;
-    const sets = Math.max(1, parseInt(cols[3], 10) || DEFAULT_SETS);
-    const rest = cols.slice(4).map((w) => w.trim());
-    const loadTexts = loadCols ? rest.slice(noteCols, noteCols + loadCols) : [];
-    const repTexts = repCols
-      ? rest.slice(noteCols + loadCols, noteCols + loadCols + repCols)
-      : [];
-    if (!sessions.has(index)) {
-      sessions.set(index, {
-        id: createId('s'),
-        title: (cols[1] ?? '').trim() || `Séance ${index}`,
-        exercises: [],
-      });
-    }
-    sessions.get(index)!.exercises.push({
-      id: createId('ex'),
-      name,
-      sets,
-      loads: loadTexts.map((v) => (v ? v.split('|') : [])),
-      reps: repTexts.map((v) => (v ? v.split('|') : [])),
-    });
-  }
-  if (sessions.size === 0)
+  const weeks = isV2
+    ? parseV2(dataLines, sep)
+    : parseLegacy(dataLines, sep, header, meta.weeks ?? 0);
+
+  if (weeks.length === 0)
     throw new Error(
-      `Aucun exo reconnu (${dataLines.length} ligne(s) lue(s)). Format attendu : séance;titre;exo;séries;C1;C2…;R1;R2…`,
+      `Aucun exo reconnu (${dataLines.length} ligne(s) lue(s)). Format : semaine;séance;exo;séries;reps;charges`,
     );
 
-  const program: Program = {
-    weeks,
-    sessions: [...sessions.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, s]) => ({
-        ...s,
-        exercises: s.exercises.map((e) => ({
-          ...e,
-          loads: Array.from({ length: weeks }, (_, i) => e.loads[i] ?? []),
-          reps: Array.from({ length: weeks }, (_, i) => e.reps[i] ?? []),
-        })),
-      })),
-  };
+  const program: Program = { weeks };
   const progress: ProgramProgress = {
     week: meta.week || 1,
     session: meta.session || 0,
@@ -177,9 +120,95 @@ export function csvToProgram(text: string): {
   const done: string[] = [];
   for (const idx of doneIdx) {
     const [w, si, ei] = idx.split('.').map(Number);
-    const s = program.sessions[si];
-    const e = s?.exercises[ei];
-    if (s && e) done.push(`${w}:${s.id}:${e.id}`);
+    const e = program.weeks[w - 1]?.sessions[si]?.exercises[ei];
+    if (e) done.push(e.id);
   }
   return { program, progress, done };
+}
+
+const series = (value: string) => (value ? value.split('|').map((v) => v.trim()) : []);
+
+function parseV2(lines: string[], sep: string): ProgramWeek[] {
+  const weeks = new Map<number, Map<string, ProgramSession>>();
+  for (const line of lines) {
+    const cols = splitLine(line, sep).map((c) => c.trim());
+    const week = parseInt(cols[0], 10);
+    const name = cols[2] ?? '';
+    if (Number.isNaN(week) || !name) continue;
+    const title = cols[1] || 'Séance';
+    if (!weeks.has(week)) weeks.set(week, new Map());
+    const sessions = weeks.get(week)!;
+    if (!sessions.has(title))
+      sessions.set(title, { id: createId('s'), title, exercises: [] });
+    sessions.get(title)!.exercises.push({
+      id: createId('ex'),
+      name,
+      sets: Math.max(1, parseInt(cols[3], 10) || DEFAULT_SETS),
+      reps: series(cols[4] ?? ''),
+      loads: series(cols[5] ?? ''),
+    });
+  }
+  return [...weeks.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, sessions]) => ({ id: createId('w'), sessions: [...sessions.values()] }));
+}
+
+/** Ancien format (séance;titre;exo;séries;S…;C…;R…) : les séances valaient pour tout le bloc. */
+function parseLegacy(
+  lines: string[],
+  sep: string,
+  header: string[],
+  metaWeeks: number,
+): ProgramWeek[] {
+  const noteCols = header.filter((h) => /^s\d+$/.test(h)).length;
+  const loadCols = header.filter((h) => /^c\d+$/.test(h)).length;
+  const repCols = header.filter((h) => /^r\d+$/.test(h)).length;
+  const weekCount = Math.max(metaWeeks, noteCols, loadCols, repCols, 1);
+
+  type Row = { index: number; title: string; name: string; sets: number; reps: string[][]; loads: string[][] };
+  const rows: Row[] = [];
+  for (const line of lines) {
+    const cols = splitLine(line, sep).map((c) => c.trim());
+    const index = parseInt(cols[0], 10);
+    const name = cols[2] ?? '';
+    if (Number.isNaN(index) || !name) continue;
+    const rest = cols.slice(4);
+    rows.push({
+      index,
+      title: cols[1] || `Séance ${index}`,
+      name,
+      sets: Math.max(1, parseInt(cols[3], 10) || DEFAULT_SETS),
+      loads: (loadCols ? rest.slice(noteCols, noteCols + loadCols) : []).map(series),
+      reps: (repCols ? rest.slice(noteCols + loadCols, noteCols + loadCols + repCols) : []).map(
+        series,
+      ),
+    });
+  }
+  if (rows.length === 0) return [];
+
+  const pick = (list: string[][], week: number): string[] => {
+    for (let i = Math.min(week, list.length) - 1; i >= 0; i--) {
+      if ((list[i] ?? []).some(Boolean)) return list[i];
+    }
+    return [];
+  };
+
+  return Array.from({ length: weekCount }, (_, wi) => {
+    const sessions = new Map<number, ProgramSession>();
+    for (const r of rows) {
+      if (!sessions.has(r.index))
+        sessions.set(r.index, { id: createId('s'), title: r.title, exercises: [] });
+      sessions.get(r.index)!.exercises.push({
+        id: createId('ex'),
+        name: r.name,
+        sets: r.sets,
+        reps: pick(r.reps, wi + 1),
+        loads: pick(r.loads, wi + 1),
+      });
+    }
+    return {
+      id: createId('w'),
+      sessions: [...sessions.entries()].sort((a, b) => a[0] - b[0]).map(([, s]) => s),
+    };
+  });
 }

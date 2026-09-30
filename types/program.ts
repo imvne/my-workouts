@@ -2,10 +2,9 @@ export type ProgramExercise = {
   id: string;
   name: string;
   sets: number;
-  /** reps[i] = répétitions de la semaine i+1 : une seule valeur = même valeur pour toutes les séries. */
-  reps: string[][];
-  /** loads[i] = charges de la semaine i+1 : une seule valeur = même charge pour toutes les séries. */
-  loads: string[][];
+  /** Une seule valeur = commune à toutes les séries ; sinon une valeur par série. */
+  reps: string[];
+  loads: string[];
 };
 
 export type ProgramSession = {
@@ -14,9 +13,14 @@ export type ProgramSession = {
   exercises: ProgramExercise[];
 };
 
-export type Program = {
-  weeks: number;
+/** Chaque semaine a ses propres séances : modifier l'une ne touche pas les autres. */
+export type ProgramWeek = {
+  id: string;
   sessions: ProgramSession[];
+};
+
+export type Program = {
+  weeks: ProgramWeek[];
 };
 
 export type ProgramProgress = {

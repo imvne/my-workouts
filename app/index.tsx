@@ -5,18 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
-import {
-  doneKey,
-  loadFor,
-  normalizeProgram,
-  repFor,
-  useProgramStore,
-} from '@/store/programStore';
+import { sessionsOf, useProgramStore, valueFor } from '@/store/programStore';
 
 export default function Home() {
   const router = useRouter();
-  const rawProgram = useProgramStore((s) => s.program);
-  const program = rawProgram ? normalizeProgram(rawProgram) : null;
+  const program = useProgramStore((s) => s.program);
   const progress = useProgramStore((s) => s.progress);
   const setProgress = useProgramStore((s) => s.setProgress);
   const setDone = useProgramStore((s) => s.setDone);
@@ -27,12 +20,7 @@ export default function Home() {
   const [spaceOpen, setSpaceOpen] = useState(false);
 
   const headerLeft = () => (
-    <Pressable
-      hitSlop={12}
-      onPress={() => setMenuOpen(true)}
-      accessibilityLabel="Menu"
-      style={styles.burger}
-    >
+    <Pressable hitSlop={12} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu" style={styles.burger}>
       <View style={styles.burgerBar} />
       <View style={styles.burgerBar} />
       <View style={styles.burgerBar} />
@@ -46,12 +34,7 @@ export default function Home() {
   );
 
   const menu = (
-    <Modal
-      visible={menuOpen}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setMenuOpen(false)}
-    >
+    <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
       <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
         <Pressable
           style={[styles.menuPanel, { paddingTop: insets.top + spacing.lg }]}
@@ -91,24 +74,33 @@ export default function Home() {
           >
             <Text style={styles.menuLinkText}>Où j’en suis</Text>
           </Pressable>
+          <Pressable
+            onPress={() => {
+              setMenuOpen(false);
+              router.push('/transfer');
+            }}
+            style={styles.menuLink}
+          >
+            <Text style={styles.menuLinkText}>Sauvegarde & import</Text>
+          </Pressable>
         </Pressable>
       </Pressable>
     </Modal>
   );
 
-  if (!program) {
+  const sessions = program ? sessionsOf(program, progress.week).filter((s) => s.exercises.length > 0) : [];
+
+  if (!program || sessions.length === 0) {
     return (
       <View style={styles.empty}>
         <Stack.Screen options={{ headerLeft, headerRight }} />
         {menu}
         <Text style={styles.emptyTitle}>Ton espace est vide</Text>
-
         <Button title="Créer ma prog" onPress={() => router.push('/edit')} />
       </View>
     );
   }
 
-  const sessions = program.sessions.filter((s) => s.exercises.length > 0);
   const sessionIndex = Math.min(progress.session, sessions.length - 1);
   const session = sessions[sessionIndex];
   const exercises = session.exercises;
@@ -119,22 +111,11 @@ export default function Home() {
   const isLastSet = setIndex >= current.sets - 1;
   const isLastExercise = exerciseIndex === exercises.length - 1;
   const isLastSession = sessionIndex === sessions.length - 1;
-  const isLastWeek = progress.week >= program.weeks;
+  const isLastWeek = progress.week >= program.weeks.length;
 
-  const goNext = () => {
-    if (!isLastSet) {
-      setProgress(
-        { ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex + 1 },
-        true,
-      );
-      return;
-    }
-    setDone([doneKey(progress.week, session.id, current.id)], true);
+  const goToNextExercise = () => {
     if (!isLastExercise) {
-      setProgress(
-        { ...progress, session: sessionIndex, exercise: exerciseIndex + 1, set: 0 },
-        true,
-      );
+      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex + 1, set: 0 }, true);
     } else if (!isLastSession) {
       setProgress({ ...progress, session: sessionIndex + 1, exercise: 0, set: 0 });
     } else if (!isLastWeek) {
@@ -144,12 +125,18 @@ export default function Home() {
     }
   };
 
+  const goNext = () => {
+    if (!isLastSet) {
+      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex + 1 }, true);
+      return;
+    }
+    setDone([current.id], true);
+    goToNextExercise();
+  };
+
   const goPrev = () => {
     if (setIndex > 0) {
-      setProgress(
-        { ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex - 1 },
-        true,
-      );
+      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex - 1 }, true);
     } else if (exerciseIndex > 0) {
       const prev = exercises[exerciseIndex - 1];
       setProgress(
@@ -172,11 +159,7 @@ export default function Home() {
   };
 
   const canGoPrev = setIndex > 0 || exerciseIndex > 0 || sessionIndex > 0;
-  const nextLabel = !isLastSet
-    ? 'Série suivante'
-    : !isLastExercise
-      ? 'Exercice suivant'
-      : 'Séance terminée';
+  const nextLabel = !isLastSet ? 'Série suivante' : !isLastExercise ? 'Exercice suivant' : 'Séance terminée';
   const nextHint = next
     ? next.name
     : isLastSession
@@ -211,6 +194,9 @@ export default function Home() {
     );
   }
 
+  const reps = valueFor(current.reps, setIndex);
+  const load = valueFor(current.loads, setIndex);
+
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
       <Stack.Screen options={{ headerLeft, headerRight }} />
@@ -223,18 +209,11 @@ export default function Home() {
           </Text>
           <Text style={styles.contextChevron}>›</Text>
         </Pressable>
-        <View
-          style={styles.dots}
-          accessibilityLabel={`Exo ${exerciseIndex + 1} sur ${exercises.length}`}
-        >
+        <View style={styles.dots} accessibilityLabel={`Exo ${exerciseIndex + 1} sur ${exercises.length}`}>
           {exercises.map((e, i) => (
             <View
               key={e.id}
-              style={[
-                styles.dot,
-                i < exerciseIndex && styles.dotDone,
-                i === exerciseIndex && styles.dotCurrent,
-              ]}
+              style={[styles.dot, i < exerciseIndex && styles.dotDone, i === exerciseIndex && styles.dotCurrent]}
             />
           ))}
         </View>
@@ -245,43 +224,48 @@ export default function Home() {
           {current.name}
         </Text>
         <View style={styles.badges}>
-          {!!repFor(current, progress.week, setIndex) && (
-            <View style={styles.loadBadge}>
-              <Text style={styles.loadText}>{repFor(current, progress.week, setIndex)} reps</Text>
+          {!!reps && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{reps} reps</Text>
             </View>
           )}
-          {!!loadFor(current, progress.week, setIndex) && (
-            <View style={styles.loadBadge}>
-              <Text style={styles.loadText}>{loadFor(current, progress.week, setIndex)}</Text>
+          {!!load && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{load}</Text>
             </View>
           )}
         </View>
         <View style={styles.sets}>
           {Array.from({ length: Math.ceil(current.sets / 5) }, (_, row) => (
             <View key={row} style={styles.setsRow}>
-              {Array.from(
-                { length: Math.min(5, current.sets - row * 5) },
-                (_, col) => row * 5 + col,
-              ).map((i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.setPill,
-                    i < setIndex && styles.setPillDone,
-                    i === setIndex && styles.setPillCurrent,
-                  ]}
-                >
-                  <Text
+              {Array.from({ length: Math.min(5, current.sets - row * 5) }, (_, col) => row * 5 + col).map(
+                (i) => (
+                  <Pressable
+                    key={i}
+                    onPress={() =>
+                      setProgress(
+                        { ...progress, session: sessionIndex, exercise: exerciseIndex, set: i },
+                        true,
+                      )
+                    }
                     style={[
-                      styles.setPillText,
-                      i < setIndex && styles.setPillTextDone,
-                      i === setIndex && styles.setPillTextOn,
+                      styles.setPill,
+                      i < setIndex && styles.setPillDone,
+                      i === setIndex && styles.setPillCurrent,
                     ]}
                   >
-                    {i + 1}
-                  </Text>
-                </View>
-              ))}
+                    <Text
+                      style={[
+                        styles.setPillText,
+                        i < setIndex && styles.setPillTextDone,
+                        i === setIndex && styles.setPillTextOn,
+                      ]}
+                    >
+                      {i + 1}
+                    </Text>
+                  </Pressable>
+                ),
+              )}
             </View>
           ))}
         </View>
@@ -295,14 +279,14 @@ export default function Home() {
           </Text>
         </View>
         <Button title={nextLabel} onPress={goNext} style={styles.mainBtn} />
-        <Pressable
-          onPress={goPrev}
-          disabled={!canGoPrev}
-          hitSlop={10}
-          style={[styles.prev, !canGoPrev && styles.prevHidden]}
-        >
-          <Text style={styles.prevText}>← Précédent</Text>
-        </Pressable>
+        <View style={styles.subActions}>
+          <Pressable onPress={goPrev} disabled={!canGoPrev} hitSlop={10} style={!canGoPrev && styles.hidden}>
+            <Text style={styles.prevText}>← Précédent</Text>
+          </Pressable>
+          <Pressable onPress={goToNextExercise} hitSlop={10}>
+            <Text style={styles.prevText}>Passer →</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -361,37 +345,18 @@ const styles = StyleSheet.create({
   },
   selectOptionText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text },
   menuCheck: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
-  menuLink: { paddingVertical: spacing.sm, marginTop: spacing.md },
+  menuLink: { paddingVertical: spacing.sm },
   menuLinkText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
 
   editBtn: { marginRight: spacing.md, paddingVertical: spacing.xs },
   editText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
 
-  empty: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  emptyTitle: {
-    fontFamily: fonts.displayBold,
-    fontSize: 32,
-    letterSpacing: -1,
-    color: colors.text,
-  },
+  empty: { flex: 1, justifyContent: 'center', padding: spacing.lg, gap: spacing.lg },
+  emptyTitle: { fontFamily: fonts.displayBold, fontSize: 32, letterSpacing: -1, color: colors.text },
 
-  screen: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    justifyContent: 'space-between',
-  },
+  screen: { flex: 1, paddingHorizontal: spacing.lg, justifyContent: 'space-between' },
   top: { gap: spacing.md, paddingTop: spacing.sm },
-  contextBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
+  contextBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
   contextChevron: {
     fontFamily: fonts.bodyBold,
     fontSize: 18,
@@ -407,28 +372,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textAlign: 'center',
   },
-  dots: {
-    flexDirection: 'row',
-    alignSelf: 'stretch',
-    gap: spacing.sm,
-  },
-  dot: {
-    flex: 1,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.pinkSoft,
-  },
+  dots: { flexDirection: 'row', alignSelf: 'stretch', gap: spacing.sm },
+  dot: { flex: 1, height: 8, borderRadius: 4, backgroundColor: colors.pinkSoft },
   dotDone: { backgroundColor: colors.pinkDeep },
-  dotCurrent: {
-    backgroundColor: colors.pinkDeep,
-    flex: 2,
-  },
+  dotCurrent: { backgroundColor: colors.pinkDeep, flex: 2 },
 
-  center: {
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.sm,
-  },
+  center: { alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
   exerciseName: {
     fontFamily: fonts.displayBold,
     fontSize: 38,
@@ -438,27 +387,15 @@ const styles = StyleSheet.create({
     letterSpacing: -1.5,
   },
   badges: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm },
-  loadBadge: {
+  badge: {
     backgroundColor: colors.pinkSoft,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs + 2,
   },
-  loadText: {
-    fontFamily: fonts.displayBold,
-    fontSize: 22,
-    letterSpacing: -0.5,
-    color: colors.pinkDeep,
-  },
-  sets: {
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  setsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
+  badgeText: { fontFamily: fonts.displayBold, fontSize: 22, letterSpacing: -0.5, color: colors.pinkDeep },
+  sets: { gap: spacing.sm, marginTop: spacing.sm },
+  setsRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.sm },
   setPill: {
     width: 36,
     height: 36,
@@ -511,14 +448,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  nextName: {
-    flex: 1,
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
-    color: colors.text,
-  },
+  nextName: { flex: 1, fontFamily: fonts.bodyBold, fontSize: 15, color: colors.text },
   mainBtn: { paddingVertical: spacing.md + 4 },
+  subActions: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.sm },
   prev: { alignItems: 'center', paddingVertical: spacing.xs },
-  prevHidden: { opacity: 0 },
+  hidden: { opacity: 0 },
   prevText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.textMuted },
 });

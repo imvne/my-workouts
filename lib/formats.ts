@@ -5,6 +5,7 @@ export const FORMATS: { key: ExerciseFormat; label: string }[] = [
   { key: 'emom', label: 'EMOM' },
   { key: 'amrap', label: 'AMRAP' },
   { key: 'fortime', label: 'For Time' },
+  { key: 'tabata', label: 'Tabata' },
   { key: 'circuit', label: 'Circuit' },
 ];
 
@@ -16,6 +17,7 @@ export function inferFormat(name: string): ExerciseFormat | null {
   if (/\be\d*mom\b/.test(n)) return 'emom';
   if (/amrap/.test(n)) return 'amrap';
   if (/for ?time/.test(n)) return 'fortime';
+  if (/tabata/.test(n)) return 'tabata';
   if (/circuit/.test(n)) return 'circuit';
   return null;
 }
@@ -39,11 +41,30 @@ export function minutesIn(...texts: string[]): number | null {
   return null;
 }
 
+/** Tabata : 20 s effort / 10 s repos par défaut, ou « tabata 40/20 ». */
+export function tabataTiming(name: string): { work: number; rest: number } {
+  const m = name.match(/(\d+)\s*\/\s*(\d+)/);
+  return m ? { work: parseInt(m[1], 10), rest: parseInt(m[2], 10) } : { work: 20, rest: 10 };
+}
+
+/** Repos en secondes : « 90 », « 90s », « 1:30 », « 2' », « 2 min ». */
+export function parseRest(text: string | undefined): number {
+  const t = (text ?? '').trim().toLowerCase();
+  if (!t) return 0;
+  const mmss = t.match(/^(\d+):(\d{1,2})$/);
+  if (mmss) return parseInt(mmss[1], 10) * 60 + parseInt(mmss[2], 10);
+  const min = t.match(/^(\d+(?:[.,]\d+)?)\s*(?:min|m|'|’)$/);
+  if (min) return Math.round(parseFloat(min[1].replace(',', '.')) * 60);
+  const sec = t.match(/^(\d+)\s*s?$/);
+  return sec ? parseInt(sec[1], 10) : 0;
+}
+
 export const BUILTIN_LIBRARY: LibraryItem[] = [
   { id: 'builtin-emom', name: 'EMOM', format: 'emom' },
   { id: 'builtin-e2mom', name: 'E2MOM', format: 'emom' },
   { id: 'builtin-amrap', name: 'AMRAP', format: 'amrap' },
   { id: 'builtin-fortime', name: 'For Time', format: 'fortime' },
+  { id: 'builtin-tabata', name: 'Tabata', format: 'tabata' },
   { id: 'builtin-circuit', name: 'Circuit', format: 'circuit' },
 ];
 

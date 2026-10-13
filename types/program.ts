@@ -1,4 +1,4 @@
-export type ExerciseFormat = 'sets' | 'emom' | 'amrap' | 'fortime' | 'circuit';
+export type ExerciseFormat = 'sets' | 'emom' | 'amrap' | 'fortime' | 'tabata' | 'circuit';
 
 export type ProgramExercise = {
   id: string;
@@ -9,6 +9,8 @@ export type ProgramExercise = {
   /** Une seule valeur = commune à toutes les séries ; sinon une valeur par série. */
   reps: string[];
   loads: string[];
+  /** Repos après chaque série : « 90 », « 1:30 », « 2' »… */
+  rest?: string;
 };
 
 export type ProgramSession = {

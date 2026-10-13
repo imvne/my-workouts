@@ -345,6 +345,13 @@ export default function EditProgram() {
                                         }
                                         style={[styles.cell, styles.cLoad]}
                                       />
+                                      <TextInput
+                                        value={e.rest ?? ''}
+                                        onChangeText={(rest) =>
+                                          commit((p) => mapExercise(p, wi, si, e.id, (x) => ({ ...x, rest })))
+                                        }
+                                        style={[styles.cell, styles.cRest]}
+                                      />
                                     </>
                                   );
                                   const dots = (
@@ -590,6 +597,9 @@ function HeadRow({ wide }: { wide: boolean }) {
       <Text numberOfLines={1} style={[styles.headCell, styles.cLoad]}>
         Charge
       </Text>
+      <Text numberOfLines={1} style={[styles.headCell, styles.cRest]}>
+        Repos
+      </Text>
       {wide && <View style={styles.cMenu} />}
     </View>
   );
@@ -749,6 +759,7 @@ const styles = StyleSheet.create({
   tight: { paddingHorizontal: 2 },
   cReps: { flex: 1.3, minWidth: 0 },
   cLoad: { flex: 1.7, minWidth: 0 },
+  cRest: { width: 64, flexShrink: 0 },
   cMenu: { width: 32, flexShrink: 0 },
   gripCol: { width: 22 },
   cFormat: { width: 96, flexShrink: 0 },

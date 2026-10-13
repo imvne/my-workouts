@@ -5,8 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
+import { RestTimer } from '@/components/workout/RestTimer';
 import { TimedExercise } from '@/components/workout/TimedExercise';
-import { formatOf } from '@/lib/formats';
+import { formatOf, parseRest } from '@/lib/formats';
 import { signOut } from '@/lib/sync';
 import { sessionsOf, useProgramStore, valueFor } from '@/store/programStore';
 
@@ -23,6 +24,10 @@ export default function Home() {
   const [spaceOpen, setSpaceOpen] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const onImmersiveChange = useCallback((v: boolean) => setImmersive(v), []);
+  const [tint, setTint] = useState<string | null>(null);
+  const onTint = useCallback((c: string | null) => setTint(c), []);
+  const [rest, setRest] = useState<{ endAt: number; total: number } | null>(null);
+  const endRest = useCallback(() => setRest(null), []);
 
   const headerLeft = () => (
     <Pressable hitSlop={12} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu" style={styles.burger}>
@@ -37,6 +42,11 @@ export default function Home() {
       <Text style={styles.editText}>{program ? 'Éditer' : 'Créer'}</Text>
     </Pressable>
   );
+
+  const plainOptions = {
+    contentStyle: { backgroundColor: colors.background },
+    headerStyle: { backgroundColor: colors.background },
+  };
 
   const menu = (
     <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
@@ -116,7 +126,7 @@ export default function Home() {
   if (!program || sessions.length === 0) {
     return (
       <View style={styles.empty}>
-        <Stack.Screen options={{ headerLeft, headerRight }} />
+        <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...plainOptions }} />
         {menu}
         <Text style={styles.emptyTitle}>Ton espace est vide</Text>
         <Button title="Créer ma prog" onPress={() => router.push('/edit')} />
@@ -148,12 +158,19 @@ export default function Home() {
     }
   };
 
+  const startRest = () => {
+    const seconds = parseRest(current.rest);
+    if (seconds > 0) setRest({ endAt: Date.now() + seconds * 1000, total: seconds * 1000 });
+  };
+
   const goNext = () => {
     if (!isLastSet) {
       setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex + 1 }, true);
+      startRest();
       return;
     }
     setDone([current.id], true);
+    if (!isLastExercise) startRest();
     goToNextExercise();
   };
 
@@ -194,7 +211,7 @@ export default function Home() {
   if (!sessionStarted) {
     return (
       <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
-        <Stack.Screen options={{ headerLeft, headerRight }} />
+        <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...plainOptions }} />
         {menu}
         <View />
         <View style={styles.intro}>
@@ -240,10 +257,33 @@ export default function Home() {
       </View>
   );
 
+  // Fond de l'écran selon la phase (repos rose, préparation grise), header compris.
+  const phaseOptions = (color: string | null) =>
+    color ? { contentStyle: { backgroundColor: color }, headerStyle: { backgroundColor: color } } : {};
+
+  if (rest) {
+    const upReps = valueFor(current.reps, setIndex);
+    const upLoad = valueFor(current.loads, setIndex);
+    return (
+      <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...phaseOptions(colors.pinkSoft) }} />
+        {menu}
+        <RestTimer
+          endAt={rest.endAt}
+          total={rest.total}
+          nextTitle={`Série ${setIndex + 1} / ${current.sets} · ${current.name}`}
+          nextDetail={[upReps && `${upReps} reps`, upLoad].filter(Boolean).join(' · ')}
+          onAdd={(ms) => setRest((r) => (r ? { endAt: r.endAt + ms, total: r.total + ms } : r))}
+          onDone={endRest}
+        />
+      </View>
+    );
+  }
+
   if (timed) {
     return (
       <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
-        <Stack.Screen options={{ headerLeft, headerRight, headerShown: !immersive }} />
+        <Stack.Screen options={{ headerLeft, headerRight, headerShown: !immersive, ...phaseOptions(tint) }} />
         {menu}
         {top}
         <TimedExercise
@@ -261,9 +301,9 @@ export default function Home() {
           onPrev={goPrev}
           canPrev={canGoPrev}
           onSkip={goToNextExercise}
-          nextLabel={nextLabel}
           nextHint={nextHint}
           onImmersiveChange={onImmersiveChange}
+          onTint={onTint}
         />
       </View>
     );
@@ -271,7 +311,15 @@ export default function Home() {
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
-      <Stack.Screen options={{ headerLeft, headerRight, headerShown: true }} />
+      <Stack.Screen
+        options={{
+          headerLeft,
+          headerRight,
+          headerShown: true,
+          contentStyle: { backgroundColor: colors.background },
+          headerStyle: { backgroundColor: colors.background },
+        }}
+      />
       {menu}
       {top}
 

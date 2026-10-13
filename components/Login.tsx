@@ -31,18 +31,32 @@ export function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const submit = async () => {
     if (!login.trim() || !password) return;
     setBusy(true);
     setError(null);
+    setInfo(null);
     const email = loginToEmail(login);
-    const { error: err } =
-      mode === 'signin'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+    if (mode === 'signin') {
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+      setBusy(false);
+      if (err) setError(frenchError(err.message));
+      return;
+    }
+    const { data, error: err } = await supabase.auth.signUp({ email, password });
     setBusy(false);
-    if (err) setError(frenchError(err.message));
+    if (err) return setError(frenchError(err.message));
+    if (data.session) return;
+    // Pas de session à l'inscription : on tente la connexion directe (compte déjà activé).
+    setBusy(true);
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    setBusy(false);
+    if (signInError) {
+      setMode('signin');
+      setInfo('Compte créé. Il doit être activé avant la première connexion.');
+    }
   };
 
   return (
@@ -92,6 +106,7 @@ export function Login() {
           </View>
 
           {!!error && <Text style={styles.error}>{error}</Text>}
+          {!!info && <Text style={styles.info}>{info}</Text>}
 
           {busy ? (
             <ActivityIndicator color={colors.pinkDeep} style={styles.spinner} />
@@ -107,6 +122,7 @@ export function Login() {
             onPress={() => {
               setMode(mode === 'signin' ? 'signup' : 'signin');
               setError(null);
+              setInfo(null);
             }}
             hitSlop={8}
             style={styles.switch}
@@ -154,7 +170,26 @@ const styles = StyleSheet.create({
   passwordInput: { paddingRight: 84 },
   eye: { position: 'absolute', right: spacing.md, paddingVertical: spacing.xs },
   eyeText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.pinkDeep },
-  error: { fontFamily: fonts.bodyMedium, fontSize: 13, color: '#C2410C' },
+  error: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#C2410C',
+    backgroundColor: '#FFF1EC',
+    borderRadius: radii.md,
+    padding: spacing.md,
+    overflow: 'hidden',
+  },
+  info: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.pinkDeep,
+    backgroundColor: colors.pinkSoft,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    overflow: 'hidden',
+  },
   spinner: { height: 50 },
   switch: { alignSelf: 'center', paddingVertical: spacing.sm },
   switchText: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.pinkDeep },

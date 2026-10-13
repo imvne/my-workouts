@@ -87,7 +87,7 @@ export default function EditProgram() {
   const wide = width >= 640;
   const withSidebar = width >= 900;
 
-  const [weekFilter, setWeekFilter] = useState<number | null>(null); // null = toutes
+  const [weekSel, setWeekSel] = useState<number[]>([]); // semaines affichées ; vide = toutes
   const [titleFilter, setTitleFilter] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState<string | null>(null); // id de séance
   const [menu, setMenu] = useState<string | null>(null);
@@ -135,15 +135,20 @@ export default function EditProgram() {
   };
 
   const showAll = () => {
-    setWeekFilter(null);
+    setWeekSel([]);
     setTitleFilter(null);
     setSessionFilter(null);
   };
 
+  const toggleWeek = (wi: number) => {
+    setSessionFilter(null);
+    setWeekSel((sel) => (sel.includes(wi) ? sel.filter((x) => x !== wi) : [...sel, wi].sort((a, b) => a - b)));
+  };
+
   const addWeek = () => {
-    const source = program.weeks[weekFilter ?? program.weeks.length - 1];
+    const source = program.weeks[weekSel.length ? weekSel[weekSel.length - 1] : program.weeks.length - 1];
     commit((p) => ({ weeks: [...p.weeks, cloneWeek(source)] }));
-    if (weekFilter !== null) setWeekFilter(program.weeks.length);
+    if (weekSel.length) setWeekSel((sel) => [...sel, program.weeks.length]);
   };
 
   const toggleFold = (key: string) =>
@@ -156,7 +161,7 @@ export default function EditProgram() {
 
   const visibleWeeks = program.weeks
     .map((w, wi) => ({ w, wi }))
-    .filter(({ wi }) => weekFilter === null || wi === weekFilter);
+    .filter(({ wi }) => weekSel.length === 0 || weekSel.includes(wi));
 
   const header = (
     <Stack.Screen
@@ -173,6 +178,16 @@ export default function EditProgram() {
         ),
       }}
     />
+  );
+
+  const weekChips = (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+      <Chip label="Tout" active={weekSel.length === 0} onPress={() => setWeekSel([])} />
+      {program.weeks.map((w, i) => (
+        <Chip key={w.id} label={`S${i + 1}`} active={weekSel.includes(i)} onPress={() => toggleWeek(i)} />
+      ))}
+      <Chip label="+" ghost onPress={addWeek} />
+    </ScrollView>
   );
 
   const weeksBody = (
@@ -391,7 +406,7 @@ export default function EditProgram() {
   );
 
   if (withSidebar) {
-    const isAll = weekFilter === null && titleFilter === null && sessionFilter === null;
+    const isAll = weekSel.length === 0 && titleFilter === null && sessionFilter === null;
     return (
       <View style={styles.flex}>
         {header}
@@ -404,9 +419,11 @@ export default function EditProgram() {
               <View key={w.id}>
                 <NavItem
                   label={`Semaine ${wi + 1}`}
-                  active={weekFilter === wi && sessionFilter === null && titleFilter === null}
+                  active={
+                    weekSel.length === 1 && weekSel[0] === wi && sessionFilter === null && titleFilter === null
+                  }
                   onPress={() => {
-                    setWeekFilter(wi);
+                    setWeekSel([wi]);
                     setTitleFilter(null);
                     setSessionFilter(null);
                   }}
@@ -418,7 +435,7 @@ export default function EditProgram() {
                     sub
                     active={sessionFilter === s.id}
                     onPress={() => {
-                      setWeekFilter(wi);
+                      setWeekSel([wi]);
                       setTitleFilter(null);
                       setSessionFilter(s.id);
                     }}
@@ -439,7 +456,6 @@ export default function EditProgram() {
                     label={label}
                     active={titleFilter === key}
                     onPress={() => {
-                      setWeekFilter(null);
                       setSessionFilter(null);
                       setTitleFilter(key);
                     }}
@@ -454,6 +470,7 @@ export default function EditProgram() {
             contentContainerStyle={[styles.mainContent, { paddingBottom: insets.bottom + spacing.xxl }]}
             keyboardShouldPersistTaps="handled"
           >
+            <View style={styles.filters}>{weekChips}</View>
             {weeksBody}
           </ScrollView>
         </View>
@@ -469,13 +486,7 @@ export default function EditProgram() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.filters}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-            <Chip label="Tout" active={weekFilter === null} onPress={() => setWeekFilter(null)} />
-            {program.weeks.map((w, i) => (
-              <Chip key={w.id} label={`S${i + 1}`} active={weekFilter === i} onPress={() => setWeekFilter(i)} />
-            ))}
-            <Chip label="+" ghost onPress={addWeek} />
-          </ScrollView>
+          {weekChips}
           {titles.length > 1 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
               <Chip label="Toutes" active={titleFilter === null} onPress={() => setTitleFilter(null)} small />

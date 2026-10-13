@@ -5,10 +5,16 @@ import { AppState, Platform } from 'react-native';
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const key = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
+// Web : localStorage (synchrone, conservé par la web app iPhone) ; mobile : AsyncStorage.
+// Pendant l'export statique il n'y a pas de `window` : pas de stockage.
+function sessionStorageBackend() {
+  if (Platform.OS !== 'web') return AsyncStorage;
+  return typeof window === 'undefined' ? undefined : window.localStorage;
+}
+
 export const supabase = createClient(url, key, {
   auth: {
-    // Pas de `window` pendant l'export statique : la session ne vit que côté navigateur.
-    storage: typeof window === 'undefined' && Platform.OS === 'web' ? undefined : AsyncStorage,
+    storage: sessionStorageBackend(),
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

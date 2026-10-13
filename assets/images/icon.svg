@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F59AB4"/>
+      <stop offset="0.55" stop-color="#E06A8C"/>
+      <stop offset="1" stop-color="#B83A62"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.18" r="0.75">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="base"><rect x="0" y="0" width="1024" height="842"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <g fill="#FFFFFF">
+    <!-- anse large, plus fine, qui plonge dans le corps -->
+    <path d="M282 520 V352 C282 268 344 212 430 212 H594 C680 212 742 268 742 352 V520 H676 V358 C676 310 642 278 594 278 H430 C382 278 348 310 348 358 V520 Z"/>
+    <!-- corps rond à base plate -->
+    <circle cx="512" cy="626" r="262" clip-path="url(#base)"/>
+  </g>
+  <path d="M540 500 L458 640 H516 L490 752 L578 604 H518 Z" fill="#D4637F"/>
+</svg>

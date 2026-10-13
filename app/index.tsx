@@ -524,7 +524,7 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
   statsBlock: {
     alignSelf: 'stretch',
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
     marginBottom: spacing.lg,
     paddingVertical: spacing.lg,
     borderTopWidth: 1,

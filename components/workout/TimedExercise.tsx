@@ -208,7 +208,9 @@ export function TimedExercise({
         <Text style={styles.name} adjustsFontSizeToFit numberOfLines={2}>
           {exercise.name}
         </Text>
-        <Stats reps={reps} load={load} big={false} />
+        <View style={styles.statsGap}>
+          <Stats reps={reps} load={load} big={false} />
+        </View>
 
         <Text style={[styles.clock, { color: clockColor }]}>{fmtClock(display, countingUp)}</Text>
         <Text style={[styles.caption, phase === 'rest' && !inPrep && styles.captionRest]}>{caption}</Text>
@@ -277,7 +279,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
   },
-  badges: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', justifyContent: 'center' },
+  statsGap: { alignSelf: 'stretch', marginTop: spacing.lg },
   badge: {
     overflow: 'hidden',
     backgroundColor: colors.white,

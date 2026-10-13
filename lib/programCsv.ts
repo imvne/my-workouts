@@ -1,9 +1,19 @@
 import { createId } from '@/lib/format';
 import { DEFAULT_SETS } from '@/store/programStore';
-import type { Program, ProgramProgress, ProgramSession, ProgramWeek } from '@/types/program';
+import type {
+  ExerciseFormat,
+  Program,
+  ProgramProgress,
+  ProgramSession,
+  ProgramWeek,
+} from '@/types/program';
+
+const FORMAT_KEYS: ExerciseFormat[] = ['sets', 'emom', 'amrap', 'fortime', 'circuit'];
+const toFormat = (v: string | undefined) =>
+  FORMAT_KEYS.find((f) => f === (v ?? '').trim().toLowerCase().replace(/\s/g, ''));
 
 const SEP = ';';
-const HEADER = ['semaine', 'séance', 'exo', 'séries', 'reps', 'charges'];
+const HEADER = ['semaine', 'séance', 'exo', 'séries', 'reps', 'charges', 'format'];
 
 /** Séparateur du fichier : `;` (Excel/Numbers FR), `,` ou tabulation. */
 function detectSep(line: string): string {
@@ -69,6 +79,7 @@ export function programToCsv(
             String(e.sets),
             quote(e.reps.join('/')),
             quote(e.loads.join('/')),
+            e.format ?? '',
           ].join(SEP),
         );
       }),
@@ -148,6 +159,7 @@ function parseV2(lines: string[], sep: string): ProgramWeek[] {
       sets: Math.max(1, parseInt(cols[3], 10) || DEFAULT_SETS),
       reps: series(cols[4] ?? ''),
       loads: series(cols[5] ?? ''),
+      format: toFormat(cols[6]),
     });
   }
   return [...weeks.entries()]

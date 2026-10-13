@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { createId } from '@/lib/format';
 import type {
+  LibraryItem,
   Program,
   ProgramExercise,
   ProgramProgress,
@@ -115,13 +116,35 @@ type ProgramState = {
   done: Record<string, true>;
   /** La séance courante est lancée (sinon écran « Commencer la séance »). */
   sessionStarted: boolean;
+  library: LibraryItem[];
   saveProgram: (program: Program) => void;
   importProgram: (program: Program, progress: ProgramProgress, done?: string[]) => void;
   clearProgram: () => void;
   setProgress: (progress: ProgramProgress, started?: boolean) => void;
   startSession: () => void;
   setDone: (ids: string[], value: boolean) => void;
+  addLibraryItem: (item: Omit<LibraryItem, 'id'>) => void;
+  updateLibraryItem: (id: string, patch: Partial<LibraryItem>) => void;
+  removeLibraryItem: (id: string) => void;
+  /** Remplace tout l'état par la version du cloud. */
+  hydrateCloud: (data: CloudData) => void;
+  /** Vide tout (déconnexion). */
+  resetAll: () => void;
 };
+
+/** Ce qui est sauvegardé dans Supabase. */
+export type CloudData = {
+  program: Program | null;
+  progress: ProgramProgress;
+  done: Record<string, true>;
+  sessionStarted: boolean;
+  library: LibraryItem[];
+};
+
+export function snapshot(): CloudData {
+  const { program, progress, done, sessionStarted, library } = useProgramStore.getState();
+  return { program, progress, done, sessionStarted, library };
+}
 
 const initialProgress: ProgramProgress = { week: 1, session: 0, exercise: 0, set: 0 };
 
@@ -169,6 +192,7 @@ export const useProgramStore = create<ProgramState>()(
       progress: initialProgress,
       done: {},
       sessionStarted: false,
+      library: [],
 
       saveProgram: (program) =>
         set((state) => ({ program, progress: clampProgress(program, state.progress) })),
@@ -198,6 +222,23 @@ export const useProgramStore = create<ProgramState>()(
       setProgress: (progress, started = false) => set({ progress, sessionStarted: started }),
       startSession: () => set({ sessionStarted: true }),
 
+      addLibraryItem: (item) =>
+        set((state) => ({ library: [...state.library, { ...item, id: createId('lib') }] })),
+      updateLibraryItem: (id, patch) =>
+        set((state) => ({ library: state.library.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
+      removeLibraryItem: (id) => set((state) => ({ library: state.library.filter((l) => l.id !== id) })),
+
+      hydrateCloud: (data) =>
+        set({
+          program: data.program ?? null,
+          progress: data.program ? clampProgress(data.program, data.progress ?? initialProgress) : initialProgress,
+          done: data.done ?? {},
+          sessionStarted: !!data.sessionStarted,
+          library: data.library ?? [],
+        }),
+      resetAll: () =>
+        set({ program: null, progress: initialProgress, done: {}, sessionStarted: false, library: [] }),
+
       setDone: (ids, value) =>
         set((state) => {
           const done = { ...state.done };
@@ -210,12 +251,16 @@ export const useProgramStore = create<ProgramState>()(
     }),
     {
       name: 'workouts-program-v1',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => AsyncStorage),
       migrate: (persisted: any, version) => {
-        if (version >= 2) return persisted;
-        const { program, done } = migrateV1(persisted);
-        return { ...persisted, program, done, sessionStarted: false };
+        let state = persisted ?? {};
+        if (version < 2) {
+          const { program, done } = migrateV1(state);
+          state = { ...state, program, done, sessionStarted: false };
+        }
+        if (version < 3) state = { ...state, library: state.library ?? [] };
+        return state;
       },
     },
   ),

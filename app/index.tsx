@@ -1,10 +1,13 @@
 import { Stack, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
+import { TimedExercise } from '@/components/workout/TimedExercise';
+import { formatOf } from '@/lib/formats';
+import { signOut } from '@/lib/sync';
 import { sessionsOf, useProgramStore, valueFor } from '@/store/programStore';
 
 export default function Home() {
@@ -18,6 +21,8 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const onImmersiveChange = useCallback((v: boolean) => setImmersive(v), []);
 
   const headerLeft = () => (
     <Pressable hitSlop={12} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu" style={styles.burger}>
@@ -82,6 +87,24 @@ export default function Home() {
             style={styles.menuLink}
           >
             <Text style={styles.menuLinkText}>Sauvegarde & import</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setMenuOpen(false);
+              router.push('/library');
+            }}
+            style={styles.menuLink}
+          >
+            <Text style={styles.menuLinkText}>Bibliothèque</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setMenuOpen(false);
+              signOut();
+            }}
+            style={[styles.menuLink, styles.menuLogout]}
+          >
+            <Text style={styles.menuLogoutText}>Se déconnecter</Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -196,13 +219,10 @@ export default function Home() {
 
   const reps = valueFor(current.reps, setIndex);
   const load = valueFor(current.loads, setIndex);
+  const timed = ['emom', 'amrap', 'fortime'].includes(formatOf(current));
 
-  return (
-    <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
-      <Stack.Screen options={{ headerLeft, headerRight }} />
-      {menu}
-
-      <View style={styles.top}>
+  const top = (
+      <View style={[styles.top, immersive && styles.hidden]}>
         <Pressable onPress={() => router.push('/position')} hitSlop={8} style={styles.contextBtn}>
           <Text style={styles.context}>
             Semaine {progress.week} · {session.title}
@@ -218,6 +238,42 @@ export default function Home() {
           ))}
         </View>
       </View>
+  );
+
+  if (timed) {
+    return (
+      <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <Stack.Screen options={{ headerLeft, headerRight, headerShown: !immersive }} />
+        {menu}
+        {top}
+        <TimedExercise
+          key={current.id}
+          exercise={current}
+          setIndex={setIndex}
+          onSetChange={(set) =>
+            setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set }, true)
+          }
+          onFinish={() => {
+            setDone([current.id], true);
+            goToNextExercise();
+          }}
+          finishLabel={isLastExercise ? 'Séance terminée' : 'Exercice suivant'}
+          onPrev={goPrev}
+          canPrev={canGoPrev}
+          onSkip={goToNextExercise}
+          nextLabel={nextLabel}
+          nextHint={nextHint}
+          onImmersiveChange={onImmersiveChange}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+      <Stack.Screen options={{ headerLeft, headerRight, headerShown: true }} />
+      {menu}
+      {top}
 
       <View style={styles.center}>
         <Text style={styles.exerciseName} adjustsFontSizeToFit numberOfLines={3}>
@@ -346,6 +402,8 @@ const styles = StyleSheet.create({
   selectOptionText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text },
   menuCheck: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
   menuLink: { paddingVertical: spacing.sm },
+  menuLogout: { marginTop: 'auto', marginBottom: spacing.xl },
+  menuLogoutText: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.textMuted },
   menuLinkText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
 
   editBtn: { marginRight: spacing.md, paddingVertical: spacing.xs },

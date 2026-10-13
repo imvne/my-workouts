@@ -15,8 +15,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DownloadIcon } from '@/components/ui/DownloadIcon';
 import { DragList, Grip } from '@/components/ui/DragList';
+import { FormatPicker, FormatTag } from '@/components/ui/FormatPicker';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { canUseFiles, downloadCsv, pickCsv } from '@/lib/csvFile';
+import { formatOf, suggest } from '@/lib/formats';
 import { csvToProgram, programToCsv } from '@/lib/programCsv';
 import {
   cloneExercise,
@@ -72,6 +74,7 @@ const mapExercise = (
 ) => mapExercises(p, wi, si, (list) => list.map((e) => (e.id === id ? fn(e) : e)));
 
 const titleKey = (t: string) => t.trim().toLowerCase();
+const fmtKeyOf = (id: string) => `f:${id}`;
 
 export default function EditProgram() {
   const router = useRouter();
@@ -81,6 +84,8 @@ export default function EditProgram() {
   const progress = useProgramStore((s) => s.progress);
   const done = useProgramStore((s) => s.done);
   const importProgram = useProgramStore((s) => s.importProgram);
+  const library = useProgramStore((s) => s.library);
+  const [nameFocus, setNameFocus] = useState<string | null>(null); // exo dont on tape le nom
   // Ordi : une ligne de tableur par exo (+ navigation à gauche si assez large).
   // Téléphone : nom au-dessus, chiffres dessous.
   const { width } = useWindowDimensions();
@@ -298,8 +303,21 @@ export default function EditProgram() {
                                       onChangeText={(n) =>
                                         commit((p) => mapExercise(p, wi, si, e.id, (x) => ({ ...x, name: n })))
                                       }
+                                      onFocus={() => setNameFocus(e.id)}
+                                      // laisse le temps au clic sur une suggestion d'arriver
+                                      onBlur={() => setTimeout(() => setNameFocus((f) => (f === e.id ? null : f)), 400)}
                                       style={[styles.cell, styles.cExo, styles.cellName]}
                                     />
+                                  );
+                                  const fmtKey = `f:${e.id}`;
+                                  const format = (
+                                    <Pressable
+                                      onPress={() => setMenu(menu === fmtKey ? null : fmtKey)}
+                                      accessibilityLabel="Format"
+                                      style={[styles.cFormat, styles.formatCell]}
+                                    >
+                                      <FormatTag format={formatOf(e)} />
+                                    </Pressable>
                                   );
                                   const numbers = (
                                     <>
@@ -336,6 +354,7 @@ export default function EditProgram() {
                                     <View style={styles.row}>
                                       <Grip handlers={handle} />
                                       {name}
+                                      {format}
                                       {numbers}
                                       {dots}
                                     </View>
@@ -344,12 +363,52 @@ export default function EditProgram() {
                                       <View style={styles.rowTop}>
                                         <Grip handlers={handle} />
                                         {name}
+                                        {format}
                                         {dots}
                                       </View>
                                       <View style={styles.rowBottom}>{numbers}</View>
                                     </View>
                                   );
                                 })()}
+                                {nameFocus === e.id &&
+                                  (() => {
+                                    const options = suggest(e.name, library, program);
+                                    if (options.length === 0) return null;
+                                    return (
+                                      <View style={styles.suggestions}>
+                                        {options.map((o) => (
+                                          <Pressable
+                                            key={o.id}
+                                            onPress={() => {
+                                              commit((p) =>
+                                                mapExercise(p, wi, si, e.id, (x) => ({
+                                                  ...x,
+                                                  name: o.name,
+                                                  format: o.format,
+                                                })),
+                                              );
+                                              setNameFocus(null);
+                                            }}
+                                            style={styles.suggestion}
+                                          >
+                                            <Text numberOfLines={1} style={styles.suggestionText}>
+                                              {o.name}
+                                            </Text>
+                                            <FormatTag format={o.format} />
+                                          </Pressable>
+                                        ))}
+                                      </View>
+                                    );
+                                  })()}
+                                {menu === fmtKeyOf(e.id) && (
+                                  <FormatPicker
+                                    value={formatOf(e)}
+                                    onPick={(f) => {
+                                      commit((p) => mapExercise(p, wi, si, e.id, (x) => ({ ...x, format: f })));
+                                      setMenu(null);
+                                    }}
+                                  />
+                                )}
                                 {menu === exKey && (
                                   <Actions
                                     items={[
@@ -515,6 +574,11 @@ function HeadRow({ wide }: { wide: boolean }) {
       {wide && (
         <Text numberOfLines={1} style={[styles.headCell, styles.cExo]}>
           Exercice
+        </Text>
+      )}
+      {wide && (
+        <Text numberOfLines={1} style={[styles.headCell, styles.cFormat]}>
+          Format
         </Text>
       )}
       <Text numberOfLines={1} style={[styles.headCell, styles.cSets, styles.center, styles.tight]}>
@@ -687,6 +751,28 @@ const styles = StyleSheet.create({
   cLoad: { flex: 1.7, minWidth: 0 },
   cMenu: { width: 32, flexShrink: 0 },
   gripCol: { width: 22 },
+  cFormat: { width: 96, flexShrink: 0 },
+  formatCell: { alignSelf: 'stretch', justifyContent: 'center', paddingHorizontal: spacing.sm },
+  suggestions: {
+    marginLeft: 22,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    overflow: 'hidden',
+    backgroundColor: colors.white,
+    boxShadow: '0 6px 18px rgba(24, 24, 27, 0.08)',
+  },
+  suggestion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  suggestionText: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.text },
   headRowStacked: { paddingLeft: 22 },
   center: { textAlign: 'center' },
 

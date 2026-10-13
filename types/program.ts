@@ -1,6 +1,10 @@
+export type ExerciseFormat = 'sets' | 'emom' | 'amrap' | 'fortime' | 'circuit';
+
 export type ProgramExercise = {
   id: string;
   name: string;
+  /** Absent = déduit du nom (« pull up emom » → EMOM). */
+  format?: ExerciseFormat;
   sets: number;
   /** Une seule valeur = commune à toutes les séries ; sinon une valeur par série. */
   reps: string[];
@@ -28,4 +32,11 @@ export type ProgramProgress = {
   session: number; // 0-based
   exercise: number; // 0-based
   set: number; // 0-based
+};
+
+/** Exo de la bibliothèque, proposé quand on tape un nom. */
+export type LibraryItem = {
+  id: string;
+  name: string;
+  format: ExerciseFormat;
 };

@@ -19,5 +19,4 @@
     <!-- corps rond à base plate -->
     <circle cx="512" cy="626" r="262" clip-path="url(#base)"/>
   </g>
-  <path d="M540 500 L458 640 H516 L490 752 L578 604 H518 Z" fill="#D4637F"/>
 </svg>

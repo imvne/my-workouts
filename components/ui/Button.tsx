@@ -46,9 +46,10 @@ export function Button({ title, variant = 'primary', style, disabled, ...rest }:
 
 const styles = StyleSheet.create({
   base: {
-    paddingVertical: spacing.md,
+    minHeight: 50,
+    paddingVertical: spacing.sm + 6,
     paddingHorizontal: spacing.lg,
-    borderRadius: radii.lg,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -61,7 +62,7 @@ const styles = StyleSheet.create({
   ghost: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
   },
   danger: {
     backgroundColor: '#C96B6B',
@@ -75,7 +76,8 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: fonts.bodyBold,
-    fontSize: 16,
+    fontSize: 15,
+    letterSpacing: 0.1,
     color: colors.white,
   },
   ghostLabel: {

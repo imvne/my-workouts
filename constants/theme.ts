@@ -1,14 +1,15 @@
 export const colors = {
-  background: '#F6EBDE',
-  backgroundAlt: '#EEDFCC',
-  surface: '#FDF6EC',
-  pink: '#E8A0B0',
-  pinkDeep: '#D4788C',
-  pinkSoft: '#F5D0D8',
-  text: '#4A3B36',
-  textMuted: '#8A746C',
-  textLight: '#B5A099',
-  border: '#E6D4BF',
+  background: '#FFFFFF',
+  backgroundAlt: '#F7F7F8',
+  surface: '#FFFFFF',
+  pink: '#EDA3B5',
+  pinkDeep: '#D4637F',
+  pinkSoft: '#FCEEF2',
+  text: '#18181B',
+  textMuted: '#71717A',
+  textLight: '#A1A1AA',
+  border: '#ECECEF',
+  borderStrong: '#DCDCE0',
   success: '#7BAE8E',
   white: '#FFFFFF',
   band: {
@@ -28,9 +29,9 @@ export const spacing = {
 } as const;
 
 export const radii = {
-  sm: 8,
-  md: 14,
-  lg: 22,
+  sm: 6,
+  md: 10,
+  lg: 14,
   pill: 999,
 } as const;
 

@@ -65,14 +65,14 @@ export default function RootLayout() {
         screenOptions={{
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
-          headerTitleStyle: { fontFamily: fonts.bodyBold },
+          headerTitleStyle: { fontFamily: fonts.bodyBold, fontSize: 16 },
           headerShadowVisible: false,
           contentStyle: { backgroundColor: colors.background },
         }}
       >
         <Stack.Screen name="index" options={{ title: '' }} />
         <Stack.Screen name="edit" options={{ title: 'Ma prog', presentation: 'modal' }} />
-        <Stack.Screen name="transfer" options={{ title: 'Sauvegarder / importer' }} />
+        <Stack.Screen name="transfer" options={{ title: 'Sauvegarde & import' }} />
         <Stack.Screen name="position" options={{ title: 'Où j’en suis', presentation: 'modal' }} />
         <Stack.Screen name="(athlete)" options={{ headerShown: false }} />
         <Stack.Screen name="(coach)" options={{ headerShown: false }} />

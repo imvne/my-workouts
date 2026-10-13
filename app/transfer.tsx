@@ -5,6 +5,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,6 +32,23 @@ export default function Transfer() {
   const progress = useProgramStore((s) => s.progress);
   const done = useProgramStore((s) => s.done);
   const importProgram = useProgramStore((s) => s.importProgram);
+  const clearProgram = useProgramStore((s) => s.clearProgram);
+
+  const wipe = () => {
+    clearProgram();
+    router.dismissTo('/');
+  };
+
+  const onClear = () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Effacer la prog et la progression ?')) wipe();
+      return;
+    }
+    Alert.alert('Effacer ma prog ?', 'Prog et progression seront supprimées.', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Effacer', style: 'destructive', onPress: wipe },
+    ]);
+  };
 
   const [text, setText] = useState(() => (program ? programToCsv(program, progress, done) : ''));
   const [copied, setCopied] = useState(false);
@@ -102,11 +120,12 @@ export default function Transfer() {
           multiline
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder={'# weeks=4\nséance;titre;exo;séries;S1;S2;S3;S4\n1;Haut;Pull up;3;1 pdc;;;'}
-          placeholderTextColor={colors.textLight}
           style={styles.textarea}
           textAlignVertical="top"
         />
+        <Pressable onPress={onClear} hitSlop={8} style={styles.danger}>
+          <Text style={styles.dangerText}>Effacer ma prog</Text>
+        </Pressable>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
@@ -123,8 +142,17 @@ export default function Transfer() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
+  content: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    padding: spacing.md,
+    gap: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
   row: { flexDirection: 'row', gap: spacing.sm },
+  danger: { alignSelf: 'center', paddingVertical: spacing.md },
+  dangerText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: '#C2410C' },
   textarea: {
     minHeight: 320,
     backgroundColor: colors.surface,

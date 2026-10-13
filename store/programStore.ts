@@ -44,12 +44,17 @@ export function cloneWeek(w: ProgramWeek): ProgramWeek {
   return { id: createId('w'), sessions: w.sessions.map(cloneSession) };
 }
 
-/** Valeur d'une série : commune s'il n'y en a qu'une, sinon celle de la série. */
+/** Valeur d'une série : commune s'il n'y en a qu'une, sinon celle de la série (ou la dernière). */
 export function valueFor(values: string[] | undefined, setIndex: number): string {
-  const arr = values ?? [];
+  const arr = (values ?? []).map((v) => v.trim());
   if (arr.length === 0) return '';
-  return (arr.length === 1 ? arr[0] : (arr[setIndex] ?? '')) || '';
+  return arr[Math.min(setIndex, arr.length - 1)] ?? '';
 }
+
+/** Cellule « tableur » : les valeurs par série sont séparées par « / ». */
+export const SERIES_SEP = '/';
+export const seriesToText = (values: string[]) => values.join(SERIES_SEP);
+export const textToSeries = (text: string) => (text === '' ? [] : text.split(SERIES_SEP));
 
 /** « 60 kg » si toutes les séries partagent la valeur, sinon « 60 · 65 · 70 ». */
 export function summarize(values: string[] | undefined): string {
@@ -58,13 +63,16 @@ export function summarize(values: string[] | undefined): string {
   return new Set(arr).size === 1 ? arr[0] : arr.join(' · ');
 }
 
+/** Séances jouables d'une semaine : exos sans nom ignorés, séances vides retirées. */
 export function sessionsOf(program: Program, week: number): ProgramSession[] {
-  return program.weeks[week - 1]?.sessions ?? [];
+  return (program.weeks[week - 1]?.sessions ?? [])
+    .map((s) => ({ ...s, exercises: s.exercises.filter((e) => e.name.trim()) }))
+    .filter((s) => s.exercises.length > 0);
 }
 
 function clampProgress(program: Program, p: ProgramProgress): ProgramProgress {
   const week = Math.min(Math.max(1, p.week), Math.max(1, program.weeks.length));
-  const sessions = sessionsOf(program, week).filter((s) => s.exercises.length > 0);
+  const sessions = sessionsOf(program, week);
   const session = Math.min(Math.max(0, p.session), Math.max(0, sessions.length - 1));
   const exercises = sessions[session]?.exercises ?? [];
   const exercise = Math.min(Math.max(0, p.exercise), Math.max(0, exercises.length - 1));

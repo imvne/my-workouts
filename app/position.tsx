@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
-import { summarize, useProgramStore } from '@/store/programStore';
+import { sessionsOf, summarize, useProgramStore } from '@/store/programStore';
 
 export default function Position() {
   const router = useRouter();
@@ -35,7 +35,7 @@ export default function Position() {
   /** Position à reprendre : premier exo non coché dans l'ordre. */
   const recompute = (nextDone: Record<string, true>) => {
     for (let wi = 0; wi < program.weeks.length; wi++) {
-      const sessions = program.weeks[wi].sessions.filter((s) => s.exercises.length > 0);
+      const sessions = sessionsOf(program, wi + 1);
       for (let si = 0; si < sessions.length; si++) {
         for (let ei = 0; ei < sessions[si].exercises.length; ei++) {
           if (!nextDone[sessions[si].exercises[ei].id]) {
@@ -58,7 +58,7 @@ export default function Position() {
     recompute(next);
   };
 
-  const currentSessions = program.weeks[progress.week - 1]?.sessions ?? [];
+  const currentSessions = sessionsOf(program, progress.week);
 
   return (
     <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}>
@@ -73,7 +73,8 @@ export default function Position() {
       />
 
       {program.weeks.map((weekData, wi) => {
-        const weekIds = weekData.sessions.flatMap((s) => s.exercises.map((e) => e.id));
+        const weekSessions = sessionsOf(program, wi + 1);
+        const weekIds = weekSessions.flatMap((s) => s.exercises.map((e) => e.id));
         const wOpen = openWeek === wi;
 
         return (
@@ -99,7 +100,7 @@ export default function Position() {
             </View>
 
             {wOpen &&
-              weekData.sessions.map((session, si) => {
+              weekSessions.map((session, si) => {
                 const sessionIds = session.exercises.map((e) => e.id);
                 const sKey = `${wi}-${si}`;
                 const sOpen = openSession === sKey;
@@ -243,7 +244,14 @@ function Row({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.sm },
+  content: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
+  },
   back: { marginTop: spacing.md },
   backBtn: { marginLeft: spacing.md, paddingVertical: spacing.xs, paddingRight: spacing.sm },
   backArrow: { fontFamily: fonts.bodyBold, fontSize: 24, lineHeight: 28, color: colors.text },

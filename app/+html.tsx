@@ -18,7 +18,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Workouts" />
-        <meta name="theme-color" content="#F6EBDE" />
+        <meta name="theme-color" content="#FFFFFF" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
@@ -30,11 +30,11 @@ export default function Root({ children }: PropsWithChildren) {
 
 const responsiveBackground = `
 body {
-  background-color: #F6EBDE;
+  background-color: #FFFFFF;
 }
 input:focus, textarea:focus {
-  outline: 2px solid #E8A0B0;
-  outline-offset: 0;
-  border-radius: 14px;
+  outline: 2px solid #D4637F;
+  outline-offset: -2px;
 }
+input, textarea { caret-color: #D4637F; }
 `;

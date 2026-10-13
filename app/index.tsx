@@ -88,7 +88,7 @@ export default function Home() {
     </Modal>
   );
 
-  const sessions = program ? sessionsOf(program, progress.week).filter((s) => s.exercises.length > 0) : [];
+  const sessions = program ? sessionsOf(program, progress.week) : [];
 
   if (!program || sessions.length === 0) {
     return (
@@ -351,10 +351,25 @@ const styles = StyleSheet.create({
   editBtn: { marginRight: spacing.md, paddingVertical: spacing.xs },
   editText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.pinkDeep },
 
-  empty: { flex: 1, justifyContent: 'center', padding: spacing.lg, gap: spacing.lg },
+  empty: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+    gap: spacing.lg,
+  },
   emptyTitle: { fontFamily: fonts.displayBold, fontSize: 32, letterSpacing: -1, color: colors.text },
 
-  screen: { flex: 1, paddingHorizontal: spacing.lg, justifyContent: 'space-between' },
+  screen: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'space-between',
+  },
   top: { gap: spacing.md, paddingTop: spacing.sm },
   contextBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
   contextChevron: {

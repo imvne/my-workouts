@@ -60,14 +60,15 @@ export function programToCsv(
   program.weeks.forEach((w, wi) =>
     w.sessions.forEach((s) =>
       s.exercises.forEach((e) => {
+        if (!e.name.trim()) return;
         rows.push(
           [
             String(wi + 1),
             quote(s.title),
             quote(e.name),
             String(e.sets),
-            quote(e.reps.join('|')),
-            quote(e.loads.join('|')),
+            quote(e.reps.join('/')),
+            quote(e.loads.join('/')),
           ].join(SEP),
         );
       }),
@@ -126,7 +127,8 @@ export function csvToProgram(text: string): Parsed {
   return { program, progress, done };
 }
 
-const series = (value: string) => (value ? value.split('|').map((v) => v.trim()) : []);
+// « / » (format actuel) ou « | » (anciens exports)
+const series = (value: string) => (value ? value.split(/[/|]/).map((v) => v.trim()) : []);
 
 function parseV2(lines: string[], sep: string): ProgramWeek[] {
   const weeks = new Map<number, Map<string, ProgramSession>>();

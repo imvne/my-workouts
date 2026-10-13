@@ -6,8 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { RestTimer } from '@/components/workout/RestTimer';
+import { Stats } from '@/components/workout/Stats';
+import { fmtClock } from '@/components/workout/TimedExercise';
 import { TimedExercise } from '@/components/workout/TimedExercise';
 import { formatOf, parseRest } from '@/lib/formats';
+import { groupBounds, nextStep, prevStep } from '@/lib/superset';
 import { signOut } from '@/lib/sync';
 import { sessionsOf, useProgramStore, valueFor } from '@/store/programStore';
 
@@ -140,15 +143,19 @@ export default function Home() {
   const exerciseIndex = Math.min(progress.exercise, exercises.length - 1);
   const current = exercises[exerciseIndex];
   const setIndex = Math.min(progress.set ?? 0, current.sets - 1);
-  const next = exercises[exerciseIndex + 1];
-  const isLastSet = setIndex >= current.sets - 1;
-  const isLastExercise = exerciseIndex === exercises.length - 1;
+  // Superset : les exos liés forment un groupe parcouru série par série.
+  const [groupStart, groupEnd] = groupBounds(exercises, exerciseIndex);
+  const inSuperset = groupEnd > groupStart;
+  const step = nextStep(exercises, exerciseIndex, setIndex);
+  const next = exercises[groupEnd + 1];
+  const isLastSet = step === null;
+  const isLastExercise = groupEnd === exercises.length - 1;
   const isLastSession = sessionIndex === sessions.length - 1;
   const isLastWeek = progress.week >= program.weeks.length;
 
   const goToNextExercise = () => {
     if (!isLastExercise) {
-      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex + 1, set: 0 }, true);
+      setProgress({ ...progress, session: sessionIndex, exercise: groupEnd + 1, set: 0 }, true);
     } else if (!isLastSession) {
       setProgress({ ...progress, session: sessionIndex + 1, exercise: 0, set: 0 });
     } else if (!isLastWeek) {
@@ -159,24 +166,26 @@ export default function Home() {
   };
 
   const startRest = () => {
-    const seconds = parseRest(current.rest);
+    // Superset : le repos est celui du dernier exo du groupe (sinon celui de l'exo en cours).
+    const seconds = parseRest(exercises[groupEnd].rest) || parseRest(current.rest);
     if (seconds > 0) setRest({ endAt: Date.now() + seconds * 1000, total: seconds * 1000 });
   };
 
   const goNext = () => {
-    if (!isLastSet) {
-      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex + 1 }, true);
-      startRest();
+    if (step) {
+      setProgress({ ...progress, session: sessionIndex, exercise: step.exercise, set: step.set }, true);
+      if (step.roundEnd) startRest(); // pas de repos entre A et B d'un superset
       return;
     }
-    setDone([current.id], true);
+    setDone(exercises.slice(groupStart, groupEnd + 1).map((e) => e.id), true);
     if (!isLastExercise) startRest();
     goToNextExercise();
   };
 
   const goPrev = () => {
-    if (setIndex > 0) {
-      setProgress({ ...progress, session: sessionIndex, exercise: exerciseIndex, set: setIndex - 1 }, true);
+    const back = prevStep(exercises, exerciseIndex, setIndex);
+    if (back) {
+      setProgress({ ...progress, session: sessionIndex, exercise: back.exercise, set: back.set }, true);
     } else if (exerciseIndex > 0) {
       const prev = exercises[exerciseIndex - 1];
       setProgress(
@@ -199,8 +208,16 @@ export default function Home() {
   };
 
   const canGoPrev = setIndex > 0 || exerciseIndex > 0 || sessionIndex > 0;
-  const nextLabel = !isLastSet ? 'Série suivante' : !isLastExercise ? 'Exercice suivant' : 'Séance terminée';
-  const nextHint = next
+  const nextLabel = step
+    ? step.exercise !== exerciseIndex
+      ? 'Enchaîner'
+      : 'Série suivante'
+    : !isLastExercise
+      ? 'Exercice suivant'
+      : 'Séance terminée';
+  const nextHint = step && step.exercise !== exerciseIndex
+    ? `${exercises[step.exercise].name} · série ${step.set + 1}`
+    : next
     ? next.name
     : isLastSession
       ? isLastWeek
@@ -324,21 +341,22 @@ export default function Home() {
       {top}
 
       <View style={styles.center}>
+        {inSuperset && (
+          <Text style={styles.superset}>
+            Superset · {exerciseIndex - groupStart + 1} / {groupEnd - groupStart + 1}
+          </Text>
+        )}
         <Text style={styles.exerciseName} adjustsFontSizeToFit numberOfLines={3}>
           {current.name}
         </Text>
-        <View style={styles.badges}>
-          {!!reps && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{reps} reps</Text>
-            </View>
-          )}
-          {!!load && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{load}</Text>
-            </View>
-          )}
+
+        <View style={styles.statsBlock}>
+          <Stats reps={reps} load={load} />
         </View>
+
+        <Text style={styles.setCaption}>
+          Série <Text style={styles.setCaptionNow}>{setIndex + 1}</Text> / {current.sets}
+        </Text>
         <View style={styles.sets}>
           {Array.from({ length: Math.ceil(current.sets / 5) }, (_, row) => (
             <View key={row} style={styles.setsRow}>
@@ -373,6 +391,11 @@ export default function Home() {
             </View>
           ))}
         </View>
+        {parseRest(exercises[groupEnd].rest || current.rest) > 0 && (
+          <Text style={styles.restHint}>
+            Repos {fmtClock(parseRest(exercises[groupEnd].rest || current.rest) * 1000)}
+          </Text>
+        )}
       </View>
 
       <View style={styles.bottom}>
@@ -499,6 +522,30 @@ const styles = StyleSheet.create({
   dotCurrent: { backgroundColor: colors.pinkDeep, flex: 2 },
 
   center: { alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
+  statsBlock: {
+    alignSelf: 'stretch',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  setCaption: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  setCaptionNow: { color: colors.pinkDeep },
+  restHint: {
+    marginTop: spacing.sm,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.textLight,
+    letterSpacing: 0.4,
+  },
   exerciseName: {
     fontFamily: fonts.displayBold,
     fontSize: 38,
@@ -506,6 +553,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
     letterSpacing: -1.5,
+  },
+  superset: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 12,
+    color: colors.pinkDeep,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
   },
   badges: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm },
   badge: {

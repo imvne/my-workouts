@@ -11,6 +11,8 @@ export type ProgramExercise = {
   loads: string[];
   /** Repos après chaque série : « 90 », « 1:30 », « 2' »… */
   rest?: string;
+  /** En superset avec l'exo suivant : on alterne les séries (A1, B1, repos, A2, B2…). */
+  linkNext?: boolean;
 };
 
 export type ProgramSession = {

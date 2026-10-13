@@ -294,8 +294,15 @@ export default function EditProgram() {
                             onMove={(from, to) => commit((p) => mapExercises(p, wi, si, (l) => moveTo(l, from, to)))}
                             renderItem={(e, ei, handle) => {
                             const exKey = `e:${e.id}`;
+                            const linked = e.linkNext || s.exercises[ei - 1]?.linkNext;
                             return (
-                              <View>
+                              <View
+                                style={[
+                                  linked && styles.superset,
+                                  e.linkNext && styles.supersetTop,
+                                  s.exercises[ei - 1]?.linkNext && styles.supersetBottom,
+                                ]}
+                              >
                                 {(() => {
                                   const name = (
                                     <TextInput
@@ -419,6 +426,14 @@ export default function EditProgram() {
                                 {menu === exKey && (
                                   <Actions
                                     items={[
+                                      {
+                                        label: e.linkNext ? 'Défaire le superset' : 'Superset avec le suivant',
+                                        disabled: !e.linkNext && ei === s.exercises.length - 1,
+                                        onPress: () =>
+                                          commit((p) =>
+                                            mapExercise(p, wi, si, e.id, (x) => ({ ...x, linkNext: !x.linkNext })),
+                                          ),
+                                      },
                                       {
                                         label: 'Dupliquer',
                                         onPress: () =>
@@ -762,6 +777,10 @@ const styles = StyleSheet.create({
   cRest: { width: 64, flexShrink: 0 },
   cMenu: { width: 32, flexShrink: 0 },
   gripCol: { width: 22 },
+  // Trait rose à gauche des exos d'un même superset.
+  superset: { borderLeftWidth: 3, borderLeftColor: colors.pink, marginLeft: -3 },
+  supersetTop: { borderTopLeftRadius: 2 },
+  supersetBottom: { borderBottomLeftRadius: 2 },
   cFormat: { width: 96, flexShrink: 0 },
   formatCell: { alignSelf: 'stretch', justifyContent: 'center', paddingHorizontal: spacing.sm },
   suggestions: {

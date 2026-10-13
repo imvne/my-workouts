@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { Stats } from '@/components/workout/Stats';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { beep, keepAwake, unlockAudio } from '@/lib/cues';
 import { emomInterval, formatOf, minutesIn, tabataTiming } from '@/lib/formats';
@@ -207,10 +208,7 @@ export function TimedExercise({
         <Text style={styles.name} adjustsFontSizeToFit numberOfLines={2}>
           {exercise.name}
         </Text>
-        <View style={styles.badges}>
-          {!!reps && <Text style={styles.badge}>{reps} reps</Text>}
-          {!!load && <Text style={styles.badge}>{load}</Text>}
-        </View>
+        <Stats reps={reps} load={load} big={false} />
 
         <Text style={[styles.clock, { color: clockColor }]}>{fmtClock(display, countingUp)}</Text>
         <Text style={[styles.caption, phase === 'rest' && !inPrep && styles.captionRest]}>{caption}</Text>

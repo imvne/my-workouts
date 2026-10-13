@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DownloadIcon } from '@/components/ui/DownloadIcon';
+import { DragList, Grip } from '@/components/ui/DragList';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { canUseFiles, downloadCsv, pickCsv } from '@/lib/csvFile';
 import { csvToProgram, programToCsv } from '@/lib/programCsv';
@@ -32,11 +33,10 @@ import type { Program, ProgramExercise, ProgramSession, ProgramWeek } from '@/ty
 
 // --- transformations pures (chaque modif est sauvegardée tout de suite) ---
 
-function move<T>(list: T[], from: number, dir: -1 | 1): T[] {
-  const to = from + dir;
-  if (to < 0 || to >= list.length) return list;
+function moveTo<T>(list: T[], from: number, to: number): T[] {
   const next = [...list];
-  [next[from], next[to]] = [next[to], next[from]];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
   return next;
 }
 
@@ -81,11 +81,15 @@ export default function EditProgram() {
   const progress = useProgramStore((s) => s.progress);
   const done = useProgramStore((s) => s.done);
   const importProgram = useProgramStore((s) => s.importProgram);
-  // Ordi : une ligne de tableur par exo. Téléphone : nom au-dessus, chiffres dessous.
-  const wide = useWindowDimensions().width >= 640;
+  // Ordi : une ligne de tableur par exo (+ navigation à gauche si assez large).
+  // Téléphone : nom au-dessus, chiffres dessous.
+  const { width } = useWindowDimensions();
+  const wide = width >= 640;
+  const withSidebar = width >= 900;
 
   const [weekFilter, setWeekFilter] = useState<number | null>(null); // null = toutes
   const [titleFilter, setTitleFilter] = useState<string | null>(null);
+  const [sessionFilter, setSessionFilter] = useState<string | null>(null); // id de séance
   const [menu, setMenu] = useState<string | null>(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
 
@@ -124,11 +128,16 @@ export default function EditProgram() {
     try {
       const parsed = csvToProgram(content);
       importProgram(parsed.program, parsed.progress, parsed.done);
-      setWeekFilter(null);
-      setTitleFilter(null);
+      showAll();
     } catch (e) {
       notify('Import impossible', e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const showAll = () => {
+    setWeekFilter(null);
+    setTitleFilter(null);
+    setSessionFilter(null);
   };
 
   const addWeek = () => {
@@ -149,77 +158,35 @@ export default function EditProgram() {
     .map((w, wi) => ({ w, wi }))
     .filter(({ wi }) => weekFilter === null || wi === weekFilter);
 
-  return (
-    <View style={styles.flex}>
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <View style={styles.headerBtns}>
-              <Pressable hitSlop={10} onPress={onImportFile} accessibilityLabel="Importer un CSV">
-                <DownloadIcon direction="down" />
-              </Pressable>
-              <Pressable hitSlop={10} onPress={onExport} accessibilityLabel="Exporter en CSV">
-                <DownloadIcon direction="up" />
-              </Pressable>
-            </View>
-          ),
-        }}
-      />
+  const header = (
+    <Stack.Screen
+      options={{
+        headerRight: () => (
+          <View style={styles.headerBtns}>
+            <Pressable hitSlop={10} onPress={onImportFile} accessibilityLabel="Importer un CSV">
+              <DownloadIcon direction="down" />
+            </Pressable>
+            <Pressable hitSlop={10} onPress={onExport} accessibilityLabel="Exporter en CSV">
+              <DownloadIcon direction="up" />
+            </Pressable>
+          </View>
+        ),
+      }}
+    />
+  );
 
-      <ScrollView
-        contentContainerStyle={[styles.page, { paddingBottom: insets.bottom + spacing.xxl }]}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Filtres */}
-        <View style={styles.filters}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-            <Chip label="Tout" active={weekFilter === null} onPress={() => setWeekFilter(null)} />
-            {program.weeks.map((w, i) => (
-              <Chip key={w.id} label={`S${i + 1}`} active={weekFilter === i} onPress={() => setWeekFilter(i)} />
-            ))}
-            <Chip label="+" ghost onPress={addWeek} />
-          </ScrollView>
-          {titles.length > 1 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              <Chip label="Toutes" active={titleFilter === null} onPress={() => setTitleFilter(null)} small />
-              {titles.map(([key, label]) => (
-                <Chip
-                  key={key}
-                  label={label}
-                  active={titleFilter === key}
-                  onPress={() => setTitleFilter(titleFilter === key ? null : key)}
-                  small
-                />
-              ))}
-            </ScrollView>
-          )}
-        </View>
-
-        {/* En-tête du tableau */}
-        <View style={styles.headRow}>
-          {wide && (
-            <Text numberOfLines={1} style={[styles.headCell, styles.cExo]}>
-              Exercice
-            </Text>
-          )}
-          <Text numberOfLines={1} style={[styles.headCell, styles.cSets, styles.center, styles.tight]}>
-            Séries
-          </Text>
-          <Text numberOfLines={1} style={[styles.headCell, styles.cReps]}>
-            Reps
-          </Text>
-          <Text numberOfLines={1} style={[styles.headCell, styles.cLoad]}>
-            Charge
-          </Text>
-          {wide && <View style={styles.cMenu} />}
-        </View>
-
+  const weeksBody = (
+    <>
         {visibleWeeks.map(({ w, wi }) => {
           const weekKey = `w:${w.id}`;
           const weekFolded = folded.has(weekKey);
           const sessions = w.sessions
             .map((s, si) => ({ s, si }))
-            .filter(({ s }) => titleFilter === null || titleKey(s.title) === titleFilter);
+            .filter(
+              ({ s }) =>
+                (titleFilter === null || titleKey(s.title) === titleFilter) &&
+                (sessionFilter === null || s.id === sessionFilter),
+            );
 
           return (
             <View key={w.id}>
@@ -243,7 +210,7 @@ export default function EditProgram() {
                       disabled: program.weeks.length <= 1,
                       onPress: () => {
                         commit((p) => ({ weeks: p.weeks.filter((_, i) => i !== wi) }));
-                        setWeekFilter(null);
+                        showAll();
                       },
                     },
                   ]}
@@ -251,13 +218,19 @@ export default function EditProgram() {
                 />
               )}
 
-              {!weekFolded &&
-                sessions.map(({ s, si }) => {
+              {!weekFolded && (
+                <DragList
+                  items={sessions}
+                  keyOf={(x) => x.s.id}
+                  enabled={titleFilter === null && sessionFilter === null}
+                  onMove={(from, to) => commit((p) => mapSessions(p, wi, (l) => moveTo(l, from, to)))}
+                  renderItem={({ s, si }, _i, sessionHandle) => {
                   const sessionKey = `s:${s.id}`;
                   const sessionFolded = folded.has(sessionKey);
                   return (
                     <View key={s.id} style={styles.session}>
                       <View style={styles.sessionHeader}>
+                        <Grip handlers={sessionHandle} />
                         <Pressable onPress={() => toggleFold(sessionKey)} hitSlop={8}>
                           <Text style={[styles.fold, !sessionFolded && styles.foldOpen]}>›</Text>
                         </Pressable>
@@ -275,16 +248,6 @@ export default function EditProgram() {
                       {menu === sessionKey && (
                         <Actions
                           items={[
-                            {
-                              label: 'Monter',
-                              disabled: si === 0,
-                              onPress: () => commit((p) => mapSessions(p, wi, (l) => move(l, si, -1))),
-                            },
-                            {
-                              label: 'Descendre',
-                              disabled: si === w.sessions.length - 1,
-                              onPress: () => commit((p) => mapSessions(p, wi, (l) => move(l, si, 1))),
-                            },
                             {
                               label: 'Dupliquer',
                               onPress: () =>
@@ -304,10 +267,15 @@ export default function EditProgram() {
 
                       {!sessionFolded && (
                         <>
-                          {s.exercises.map((e, ei) => {
+                          <HeadRow wide={wide} />
+                          <DragList
+                            items={s.exercises}
+                            keyOf={(e) => e.id}
+                            onMove={(from, to) => commit((p) => mapExercises(p, wi, si, (l) => moveTo(l, from, to)))}
+                            renderItem={(e, ei, handle) => {
                             const exKey = `e:${e.id}`;
                             return (
-                              <View key={e.id}>
+                              <View>
                                 {(() => {
                                   const name = (
                                     <TextInput
@@ -351,6 +319,7 @@ export default function EditProgram() {
                                   );
                                   return wide ? (
                                     <View style={styles.row}>
+                                      <Grip handlers={handle} />
                                       {name}
                                       {numbers}
                                       {dots}
@@ -358,6 +327,7 @@ export default function EditProgram() {
                                   ) : (
                                     <View style={styles.rowStack}>
                                       <View style={styles.rowTop}>
+                                        <Grip handlers={handle} />
                                         {name}
                                         {dots}
                                       </View>
@@ -368,16 +338,6 @@ export default function EditProgram() {
                                 {menu === exKey && (
                                   <Actions
                                     items={[
-                                      {
-                                        label: 'Monter',
-                                        disabled: ei === 0,
-                                        onPress: () => commit((p) => mapExercises(p, wi, si, (l) => move(l, ei, -1))),
-                                      },
-                                      {
-                                        label: 'Descendre',
-                                        disabled: ei === s.exercises.length - 1,
-                                        onPress: () => commit((p) => mapExercises(p, wi, si, (l) => move(l, ei, 1))),
-                                      },
                                       {
                                         label: 'Dupliquer',
                                         onPress: () =>
@@ -399,7 +359,8 @@ export default function EditProgram() {
                                 )}
                               </View>
                             );
-                          })}
+                            }}
+                          />
                           <Pressable
                             onPress={() => commit((p) => mapExercises(p, wi, si, (l) => [...l, newExercise()]))}
                             style={styles.addRow}
@@ -410,9 +371,11 @@ export default function EditProgram() {
                       )}
                     </View>
                   );
-                })}
+                  }}
+                />
+              )}
 
-              {!weekFolded && titleFilter === null && (
+              {!weekFolded && titleFilter === null && sessionFilter === null && (
                 <Pressable
                   onPress={() => commit((p) => mapSessions(p, wi, (l) => [...l, newSession(l.length)]))}
                   style={styles.addSession}
@@ -424,11 +387,156 @@ export default function EditProgram() {
           );
         })}
 
-        <Pressable onPress={() => router.push('/transfer')} hitSlop={8} style={styles.footerLink}>
-          <Text style={styles.footerLinkText}>Sauvegarde & import</Text>
-        </Pressable>
+    </>
+  );
+
+  if (withSidebar) {
+    const isAll = weekFilter === null && titleFilter === null && sessionFilter === null;
+    return (
+      <View style={styles.flex}>
+        {header}
+        <View style={styles.split}>
+          <ScrollView style={styles.sidebar} contentContainerStyle={styles.sidebarContent}>
+            <NavItem label="Tout le bloc" active={isAll} onPress={showAll} />
+
+            <Text style={styles.navSection}>Semaines</Text>
+            {program.weeks.map((w, wi) => (
+              <View key={w.id}>
+                <NavItem
+                  label={`Semaine ${wi + 1}`}
+                  active={weekFilter === wi && sessionFilter === null && titleFilter === null}
+                  onPress={() => {
+                    setWeekFilter(wi);
+                    setTitleFilter(null);
+                    setSessionFilter(null);
+                  }}
+                />
+                {w.sessions.map((s) => (
+                  <NavItem
+                    key={s.id}
+                    label={s.title || 'Séance'}
+                    sub
+                    active={sessionFilter === s.id}
+                    onPress={() => {
+                      setWeekFilter(wi);
+                      setTitleFilter(null);
+                      setSessionFilter(s.id);
+                    }}
+                  />
+                ))}
+              </View>
+            ))}
+            <Pressable onPress={addWeek} style={styles.navAdd}>
+              <Text style={styles.addText}>+ Semaine</Text>
+            </Pressable>
+
+            {titles.length > 1 && (
+              <>
+                <Text style={styles.navSection}>Par séance</Text>
+                {titles.map(([key, label]) => (
+                  <NavItem
+                    key={key}
+                    label={label}
+                    active={titleFilter === key}
+                    onPress={() => {
+                      setWeekFilter(null);
+                      setSessionFilter(null);
+                      setTitleFilter(key);
+                    }}
+                  />
+                ))}
+              </>
+            )}
+          </ScrollView>
+
+          <ScrollView
+            style={styles.main}
+            contentContainerStyle={[styles.mainContent, { paddingBottom: insets.bottom + spacing.xxl }]}
+            keyboardShouldPersistTaps="handled"
+          >
+            {weeksBody}
+          </ScrollView>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.flex}>
+      {header}
+      <ScrollView
+        contentContainerStyle={[styles.page, { paddingBottom: insets.bottom + spacing.xxl }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.filters}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            <Chip label="Tout" active={weekFilter === null} onPress={() => setWeekFilter(null)} />
+            {program.weeks.map((w, i) => (
+              <Chip key={w.id} label={`S${i + 1}`} active={weekFilter === i} onPress={() => setWeekFilter(i)} />
+            ))}
+            <Chip label="+" ghost onPress={addWeek} />
+          </ScrollView>
+          {titles.length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+              <Chip label="Toutes" active={titleFilter === null} onPress={() => setTitleFilter(null)} small />
+              {titles.map(([key, label]) => (
+                <Chip
+                  key={key}
+                  label={label}
+                  active={titleFilter === key}
+                  onPress={() => setTitleFilter(titleFilter === key ? null : key)}
+                  small
+                />
+              ))}
+            </ScrollView>
+          )}
+        </View>
+        {weeksBody}
       </ScrollView>
     </View>
+  );
+}
+
+function HeadRow({ wide }: { wide: boolean }) {
+  return (
+    <View style={[styles.headRow, !wide && styles.headRowStacked]}>
+      {wide && <View style={styles.gripCol} />}
+      {wide && (
+        <Text numberOfLines={1} style={[styles.headCell, styles.cExo]}>
+          Exercice
+        </Text>
+      )}
+      <Text numberOfLines={1} style={[styles.headCell, styles.cSets, styles.center, styles.tight]}>
+        Séries
+      </Text>
+      <Text numberOfLines={1} style={[styles.headCell, styles.cReps]}>
+        Reps
+      </Text>
+      <Text numberOfLines={1} style={[styles.headCell, styles.cLoad]}>
+        Charge
+      </Text>
+      {wide && <View style={styles.cMenu} />}
+    </View>
+  );
+}
+
+function NavItem({
+  label,
+  active,
+  sub,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  sub?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={[styles.navItem, sub && styles.navItemSub, active && styles.navItemOn]}>
+      <Text numberOfLines={1} style={[styles.navText, sub && styles.navTextSub, active && styles.navTextOn]}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -549,8 +657,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderStrong,
-    paddingVertical: spacing.sm,
+    borderBottomColor: colors.border,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs + 2,
   },
   headCell: {
     paddingHorizontal: spacing.sm + 2,
@@ -566,6 +675,8 @@ const styles = StyleSheet.create({
   cReps: { flex: 1.3, minWidth: 0 },
   cLoad: { flex: 1.7, minWidth: 0 },
   cMenu: { width: 32, flexShrink: 0 },
+  gripCol: { width: 22 },
+  headRowStacked: { paddingLeft: 22 },
   center: { textAlign: 'center' },
 
   weekHeader: {
@@ -615,7 +726,7 @@ const styles = StyleSheet.create({
   },
   rowStack: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.xs },
   rowTop: { flexDirection: 'row', alignItems: 'center', height: 40 },
-  rowBottom: { flexDirection: 'row', alignItems: 'center', height: 34 },
+  rowBottom: { flexDirection: 'row', alignItems: 'center', height: 34, paddingLeft: 22 },
   cell: {
     alignSelf: 'stretch',
     paddingHorizontal: spacing.sm + 2,
@@ -653,6 +764,26 @@ const styles = StyleSheet.create({
   addSession: { paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.xs, marginTop: spacing.xs },
   addText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.pinkDeep },
 
-  footerLink: { alignItems: 'center', paddingVertical: spacing.xl },
-  footerLinkText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.textMuted },
+  split: { flex: 1, flexDirection: 'row', width: '100%', maxWidth: 1240, alignSelf: 'center' },
+  sidebar: { width: 230, flexGrow: 0, borderRightWidth: 1, borderRightColor: colors.border },
+  sidebarContent: { paddingVertical: spacing.sm, paddingHorizontal: spacing.sm, gap: 2 },
+  navSection: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.textLight,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  navItem: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 3, borderRadius: radii.sm },
+  navItemSub: { paddingLeft: spacing.lg },
+  navItemOn: { backgroundColor: colors.pinkSoft },
+  navText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.text },
+  navTextSub: { fontFamily: fonts.body, color: colors.textMuted },
+  navTextOn: { color: colors.pinkDeep },
+  navAdd: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 3 },
+  main: { flex: 1 },
+  mainContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, maxWidth: 960 },
 });

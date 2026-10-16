@@ -166,14 +166,33 @@ export default function Home() {
   );
 
   const sessions = program ? sessionsOf(program, progress.week) : [];
+  const hasSessions = !!program && program.weeks.some((w) => w.sessions.length > 0);
 
-  if (!program || sessions.length === 0) {
+  // Écran vide seulement sans aucune prog ; sinon l'accueil (même si la semaine en cours est vide).
+  if (!program || !hasSessions) {
     return (
       <View style={styles.empty}>
         <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...plainOptions }} />
         {menu}
         <Text style={styles.emptyTitle}>Ton espace est vide</Text>
         <Button title="Créer ma prog" onPress={() => router.push('/edit')} />
+      </View>
+    );
+  }
+
+  if (!sessionStarted || sessions.length === 0) {
+    return (
+      <View style={[styles.screen, styles.dashboard, { paddingBottom: insets.bottom }]}>
+        <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...plainOptions }} />
+        {menu}
+        {recapModal}
+        <Dashboard
+          onStart={(_target, sessionId) => {
+            markSessionStarted(sessionId);
+            startSession();
+          }}
+          onRecap={(week, sessionId) => setRecap({ week, sessionId })}
+        />
       </View>
     );
   }
@@ -300,22 +319,6 @@ export default function Home() {
         : `Semaine ${progress.week + 1}`
       : sessions[sessionIndex + 1].title;
 
-  if (!sessionStarted) {
-    return (
-      <View style={[styles.screen, styles.dashboard, { paddingBottom: insets.bottom }]}>
-        <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...plainOptions }} />
-        {menu}
-        {recapModal}
-        <Dashboard
-          onStart={() => {
-            markSessionStarted(session.id);
-            startSession();
-          }}
-          onRecap={(week, sessionId) => setRecap({ week, sessionId })}
-        />
-      </View>
-    );
-  }
 
   const reps = valueFor(current.reps, setIndex);
   const load = valueFor(current.loads, setIndex);

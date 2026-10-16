@@ -340,7 +340,11 @@ export function TimedExercise({
         {finished ? (
           <View style={styles.pair}>
             <Button title="Recommencer" variant="ghost" onPress={restart} style={styles.flex} />
-            <Button title={finishLabel} onPress={onFinish} style={styles.flex} />
+            <Button
+              title={finishLabel === 'Exercice suivant' ? 'Suivant' : 'Terminer'}
+              onPress={onFinish}
+              style={styles.flex}
+            />
           </View>
         ) : running ? (
           <View style={styles.pair}>

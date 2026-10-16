@@ -5,15 +5,17 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import {
-  firstUntreated,
   isTreated,
   nextWeekStart,
   sessionsOf,
   useProgramStore,
 } from '@/store/programStore';
-import type { ProgramSession } from '@/types/program';
+import type { ProgramProgress, ProgramSession } from '@/types/program';
 
-type Status = 'done' | 'skipped' | 'partial' | 'todo';
+type Status = 'done' | 'skipped' | 'partial' | 'todo' | 'empty';
+
+/** Une séance du bloc telle qu'affichée : `si` = rang parmi les séances jouables (null si vide). */
+type Slot = { week: number; session: ProgramSession; si: number | null };
 
 const MAX_SESSION_MS = 4 * 3600_000;
 
@@ -28,7 +30,8 @@ export function Dashboard({
   onStart,
   onRecap,
 }: {
-  onStart: () => void;
+  /** Lance la séance : `target` = premier exo à faire, `sessionId` pour le journal. */
+  onStart: (target: ProgramProgress, sessionId: string) => void;
   onRecap: (week: number, sessionId: string) => void;
 }) {
   const router = useRouter();
@@ -42,7 +45,8 @@ export function Dashboard({
   const [force, setForce] = useState(false);
 
   const statusOf = (session: ProgramSession): Status => {
-    const ids = session.exercises.map((e) => e.id);
+    const ids = session.exercises.filter((e) => e.name.trim()).map((e) => e.id);
+    if (ids.length === 0) return 'empty';
     const d = ids.filter((id) => done[id]).length;
     const treated = ids.filter((id) => isTreated(id, done, skipped)).length;
     if (treated === ids.length) return d > 0 ? 'done' : 'skipped';
@@ -50,25 +54,43 @@ export function Dashboard({
     return 'todo';
   };
 
-  /** Choisir une séance : on se place sur son premier exo non traité. */
-  const pick = (week: number, si: number) => {
-    const session = sessionsOf(program, week)[si];
-    const ei = Math.max(
-      0,
-      session.exercises.findIndex((e) => !isTreated(e.id, done, skipped)),
-    );
-    setProgress({ week, session: si, exercise: ei, set: 0 });
+  const slotsOf = (week: number): Slot[] => {
+    const playable = sessionsOf(program, week);
+    return (program.weeks[week - 1]?.sessions ?? []).map((raw) => {
+      const si = playable.findIndex((p) => p.id === raw.id);
+      return { week, session: si >= 0 ? playable[si] : raw, si: si >= 0 ? si : null };
+    });
+  };
+  const allSlots = program.weeks.flatMap((_, wi) => slotsOf(wi + 1));
+  const finishedStatus = (st: Status) => st === 'done' || st === 'skipped';
+
+  // Séance mise en avant : celle choisie (tap sur un point), sinon la première pas finie du bloc.
+  const [picked, setPicked] = useState<string | null>(null);
+  const atProgress = allSlots.find(
+    (sl) => sl.week === progress.week && sl.si === Math.min(progress.session, sessionsOf(program, progress.week).length - 1),
+  );
+  const hero =
+    allSlots.find((sl) => sl.session.id === picked) ??
+    (atProgress && !finishedStatus(statusOf(atProgress.session)) ? atProgress : undefined) ??
+    allSlots.find((sl) => !finishedStatus(statusOf(sl.session)));
+
+  const blockDone = !hero;
+  const week = hero?.week ?? progress.week;
+  const session = hero?.session;
+  const status = session ? statusOf(session) : 'todo';
+  const sessions = sessionsOf(program, week);
+
+  const start = () => {
+    if (!hero || hero.si === null) return;
+    const ei = Math.max(0, hero.session.exercises.findIndex((e) => !isTreated(e.id, done, skipped)));
+    const target = { week: hero.week, session: hero.si, exercise: ei, set: 0 };
+    setProgress(target);
+    onStart(target, hero.session.id);
   };
 
-  const blockDone = firstUntreated(program, done, skipped) === null;
-  const week = progress.week;
-  const sessions = sessionsOf(program, week);
-  const session = sessions[Math.min(progress.session, sessions.length - 1)];
-  const status = session ? statusOf(session) : 'todo';
-
   // Semaine précédente finie et nouvelle semaine pas encore commencée : on attend le jour de reprise.
-  const prev = week > 1 ? sessionsOf(program, week - 1) : [];
-  const prevFinished = prev.length > 0 && prev.every((s) => statusOf(s) === 'done' || statusOf(s) === 'skipped');
+  const prev = week > 1 ? slotsOf(week - 1).map((sl) => sl.session) : [];
+  const prevFinished = prev.length > 0 && prev.every((s) => finishedStatus(statusOf(s)));
   const weekStarted = sessions.some((s) => statusOf(s) !== 'todo');
   const prevEnd = Math.max(0, ...prev.map((s) => log[s.id]?.finishedAt ?? 0));
   const unlock = prevFinished && !weekStarted && prevEnd ? nextWeekStart(prevEnd, settings.weekStartDay) : null;
@@ -84,11 +106,8 @@ export function Dashboard({
     (n, s) => n + s.exercises.filter((e) => done[e.id]).reduce((m, e) => m + e.sets, 0),
     0,
   );
-  const totalSessions = program.weeks.reduce((n, _, i) => n + sessionsOf(program, i + 1).length, 0);
-  const totalDone = program.weeks.reduce(
-    (n, _, i) => n + sessionsOf(program, i + 1).filter((s) => statusOf(s) === 'done').length,
-    0,
-  );
+  const totalSessions = allSlots.length;
+  const totalDone = allSlots.filter((sl) => statusOf(sl.session) === 'done').length;
 
   // Dernière séance terminée (moins de 24 h) : raccourci vers son récap à partager.
   type Finished = { week: number; session: ProgramSession; at: number };
@@ -136,10 +155,19 @@ export function Dashboard({
               <Text style={styles.linkText}>Commencer quand même</Text>
             </Pressable>
           </>
+        ) : session && status === 'empty' ? (
+          <>
+            <Text style={styles.kicker}>Semaine {week} · à programmer</Text>
+            <Text style={styles.title} numberOfLines={2}>
+              {session.title}
+            </Text>
+            <Text style={styles.meta}>Aucun exercice pour l’instant.</Text>
+            <Button title="Programmer la séance" onPress={() => router.push('/edit')} style={styles.cta} />
+          </>
         ) : session ? (
           <>
             <Text style={styles.kicker}>
-              Semaine {week} · {status === 'partial' ? 'en cours' : 'prochaine séance'}
+              Semaine {week} · {status === 'partial' ? 'en cours' : finishedStatus(status) ? 'déjà faite' : 'prochaine séance'}
             </Text>
             <Text style={styles.title} numberOfLines={2}>
               {session.title}
@@ -149,8 +177,14 @@ export function Dashboard({
               {session.exercises.reduce((n, e) => n + e.sets, 0)} séries
             </Text>
             <Button
-              title={status === 'partial' ? 'Reprendre la séance' : 'Commencer la séance'}
-              onPress={onStart}
+              title={
+                status === 'partial'
+                  ? 'Reprendre la séance'
+                  : finishedStatus(status)
+                    ? 'Refaire la séance'
+                    : 'Commencer la séance'
+              }
+              onPress={start}
               style={styles.cta}
             />
           </>
@@ -166,22 +200,22 @@ export function Dashboard({
           </Text>
         </View>
         {program.weeks.map((w, wi) => {
-          const ws = sessionsOf(program, wi + 1);
+          const ws = slotsOf(wi + 1);
           const current = wi + 1 === week;
           return (
             <View key={w.id} style={styles.weekRow}>
               <Text style={[styles.weekLabel, current && styles.weekLabelOn]}>S{wi + 1}</Text>
               <View style={styles.dots}>
-                {ws.map((s, si) => (
+                {ws.map((sl) => (
                   <Pressable
-                    key={s.id}
-                    onPress={() => pick(wi + 1, si)}
+                    key={sl.session.id}
+                    onPress={() => setPicked(sl.session.id)}
                     style={styles.dotCell}
-                    accessibilityLabel={`${s.title}, semaine ${wi + 1}`}
+                    accessibilityLabel={`${sl.session.title}, semaine ${wi + 1}`}
                   >
-                    <Dot status={statusOf(s)} next={current && si === progress.session && !blockDone} />
+                    <Dot status={statusOf(sl.session)} next={sl.session.id === session?.id} />
                     <Text numberOfLines={1} style={styles.dotLabel}>
-                      {s.title}
+                      {shortTitle(sl.session.title)}
                     </Text>
                   </Pressable>
                 ))}
@@ -204,6 +238,12 @@ export function Dashboard({
   );
 }
 
+/** « Séance 1 - PU/Dos/Biceps » → « PU/Dos/Biceps » sous le point. */
+function shortTitle(title: string) {
+  const m = title.match(/^\s*s[ée]ance\s*\d+\s*[-–:·]\s*(.+)$/i);
+  return (m ? m[1] : title).trim();
+}
+
 function Dot({ status, next }: { status: Status; next: boolean }) {
   return (
     <View
@@ -211,6 +251,7 @@ function Dot({ status, next }: { status: Status; next: boolean }) {
         styles.dot,
         status === 'done' && styles.dotDone,
         status === 'skipped' && styles.dotSkipped,
+        status === 'empty' && styles.dotEmpty,
         next && styles.dotNext,
       ]}
     >
@@ -288,6 +329,7 @@ const styles = StyleSheet.create({
   },
   dotDone: { backgroundColor: colors.pinkDeep, borderColor: colors.pinkDeep },
   dotSkipped: { backgroundColor: colors.backgroundAlt, borderColor: colors.borderStrong },
+  dotEmpty: { borderStyle: 'dashed', borderColor: colors.textLight },
   dotNext: { borderColor: colors.pinkDeep, borderWidth: 2.5 },
   dotHalf: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%', backgroundColor: colors.pink },
   dotCheck: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.white },

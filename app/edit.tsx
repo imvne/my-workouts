@@ -19,6 +19,7 @@ import { DragList, Grip } from '@/components/ui/DragList';
 import { FormatPicker, FormatTag } from '@/components/ui/FormatPicker';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { canUseFiles, downloadCsv, pickCsv } from '@/lib/csvFile';
+import { fmtClock } from '@/components/workout/TimedExercise';
 import { formatOf, suggest } from '@/lib/formats';
 import { csvToProgram, programToCsv } from '@/lib/programCsv';
 import {
@@ -361,6 +362,7 @@ export default function EditProgram() {
                                         }
                                         style={[styles.cell, styles.cRest]}
                                       />
+                                      <ResultCell exercise={e} />
                                     </>
                                   );
                                   const dots = (
@@ -617,6 +619,9 @@ function HeadRow({ wide }: { wide: boolean }) {
       <Text numberOfLines={1} style={[styles.headCell, styles.cRest]}>
         Repos
       </Text>
+      <Text numberOfLines={1} style={[styles.headCell, styles.cResult]}>
+        Résultat
+      </Text>
       {wide && <View style={styles.cMenu} />}
     </View>
   );
@@ -701,6 +706,49 @@ function Actions({
   );
 }
 
+/**
+ * Résultat d'un For Time (« 8:42 ») ou d'un AMRAP (« 37 » reps), le même que celui
+ * enregistré par le chrono. Vide pour les autres formats.
+ */
+function ResultCell({ exercise }: { exercise: ProgramExercise }) {
+  const result = useProgramStore((s) => s.results[exercise.id]);
+  const setResult = useProgramStore((s) => s.setResult);
+  const format = formatOf(exercise);
+  const editable = format === 'fortime' || format === 'amrap';
+  const shown = !result
+    ? ''
+    : format === 'amrap' && result.reps
+      ? String(result.reps)
+      : fmtClock(result.ms, true);
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+
+  if (!editable) return <View style={styles.cResult} />;
+
+  const save = () => {
+    const t = text.trim();
+    if (!t) return setResult(exercise.id, null);
+    const mmss = t.match(/^(\d+):(\d{1,2})$/);
+    const reps = t.match(/^\d+$/);
+    if (mmss) {
+      const ms = (parseInt(mmss[1], 10) * 60 + parseInt(mmss[2], 10)) * 1000;
+      setResult(exercise.id, { ms, reps: result?.reps ?? 0, finished: true, at: Date.now() });
+    } else if (reps) {
+      setResult(exercise.id, { ms: result?.ms ?? 0, reps: parseInt(t, 10), finished: true, at: Date.now() });
+    } else setText(shown); // saisie illisible : on remet la valeur connue
+  };
+
+  return (
+    <TextInput
+      value={text}
+      onChangeText={setText}
+      onBlur={save}
+      onSubmitEditing={save}
+      style={[styles.cell, styles.cResult, styles.resultText]}
+    />
+  );
+}
+
 /** Champ numérique tolérant la saisie vide le temps de taper. */
 function SetsCell({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
   const [text, setText] = useState(String(value));
@@ -777,6 +825,8 @@ const styles = StyleSheet.create({
   cReps: { flex: 1.3, minWidth: 0 },
   cLoad: { flex: 1.7, minWidth: 0 },
   cRest: { width: 64, flexShrink: 0 },
+  cResult: { width: 96, flexShrink: 0 },
+  resultText: { fontFamily: fonts.bodyBold, color: colors.pinkDeep },
   cMenu: { width: 32, flexShrink: 0 },
   gripCol: { width: 22 },
   // Trait rose à gauche des exos d'un même superset.

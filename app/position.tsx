@@ -70,7 +70,16 @@ export default function Position() {
     recompute();
   };
 
-  const currentSessions = sessionsOf(program, progress.week);
+  // Prochaine séance pas finie du bloc (y compris celles encore vides), dans l'ordre.
+  const next = program.weeks
+    .flatMap((w, wi) => {
+      const playable = sessionsOf(program, wi + 1);
+      return w.sessions.map((raw) => {
+        const si = playable.findIndex((p) => p.id === raw.id);
+        return { week: wi + 1, si: si >= 0 ? si : null, session: si >= 0 ? playable[si] : raw };
+      });
+    })
+    .find((sl) => sl.si === null || sl.session.exercises.some((e) => !isTreated(e.id, done, skipped)));
 
   return (
     <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}>
@@ -87,6 +96,9 @@ export default function Position() {
       {program.weeks.map((weekData, wi) => {
         const weekSessions = sessionsOf(program, wi + 1);
         const weekIds = weekSessions.flatMap((s) => s.exercises.map((e) => e.id));
+        // Séances encore vides : elles comptent, la semaine n'est pas finie tant qu'elles restent.
+        const unprogrammed = weekData.sessions.filter((raw) => !weekSessions.some((p) => p.id === raw.id));
+        const weekComplete = unprogrammed.length === 0 && allDone(weekIds);
         const wOpen = openWeek === wi;
 
         return (
@@ -96,11 +108,11 @@ export default function Position() {
                 hitSlop={8}
                 onPress={() => toggle(weekIds)}
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: allDone(weekIds) }}
+                accessibilityState={{ checked: weekComplete }}
                 accessibilityLabel={`Semaine ${wi + 1}`}
-                style={[styles.weekCheck, allDone(weekIds) && styles.weekCheckDone]}
+                style={[styles.weekCheck, weekComplete && styles.weekCheckDone]}
               >
-                {allDone(weekIds) && <Text style={styles.weekCheckMark}>✓</Text>}
+                {weekComplete && <Text style={styles.weekCheckMark}>✓</Text>}
               </Pressable>
               <Pressable onPress={() => setOpenWeek(wOpen ? null : wi)} style={styles.rowLabel}>
                 <Text style={styles.weekKicker}>Semaine</Text>
@@ -112,7 +124,24 @@ export default function Position() {
             </View>
 
             {wOpen &&
-              weekSessions.map((session, si) => {
+              weekData.sessions.map((raw) => {
+                const si = weekSessions.findIndex((p) => p.id === raw.id);
+                if (si < 0)
+                  return (
+                    <Row
+                      key={raw.id}
+                      label={raw.title}
+                      sub="À programmer"
+                      checked={false}
+                      empty
+                      current={false}
+                      open={false}
+                      level={1}
+                      onToggle={() => router.push('/edit')}
+                      onCheck={() => router.push('/edit')}
+                    />
+                  );
+                const session = weekSessions[si];
                 const sessionIds = session.exercises.map((e) => e.id);
                 const sKey = `${wi}-${si}`;
                 const sOpen = openSession === sKey;
@@ -198,8 +227,21 @@ export default function Position() {
       })}
 
       <Button
-        title={`Continuer semaine ${progress.week} · ${currentSessions[progress.session]?.title ?? ''}`}
-        onPress={goBack}
+        title={
+          !next
+            ? 'Bloc terminé'
+            : next.si === null
+              ? `Programmer semaine ${next.week} · ${next.session.title}`
+              : `Continuer semaine ${next.week} · ${next.session.title}`
+        }
+        onPress={() => {
+          if (next && next.si === null) return router.replace('/edit');
+          if (next && next.si !== null) {
+            const ei = Math.max(0, next.session.exercises.findIndex((e) => !isTreated(e.id, done, skipped)));
+            setProgress({ week: next.week, session: next.si, exercise: ei, set: 0 });
+          }
+          goBack();
+        }}
         style={styles.back}
       />
     </ScrollView>
@@ -211,6 +253,7 @@ function Row({
   sub,
   checked,
   skipped,
+  empty,
   current,
   open,
   level,
@@ -221,6 +264,7 @@ function Row({
   sub?: string;
   checked: boolean;
   skipped?: boolean;
+  empty?: boolean;
   current: boolean;
   open: boolean;
   level: 1 | 2;
@@ -235,7 +279,7 @@ function Row({
         accessibilityRole="checkbox"
         accessibilityState={{ checked }}
         accessibilityLabel={label}
-        style={[styles.check, checked && styles.checkDone, skipped && styles.checkSkipped]}
+        style={[styles.check, checked && styles.checkDone, skipped && styles.checkSkipped, empty && styles.checkEmpty]}
       >
         {checked && <Text style={styles.checkMark}>✓</Text>}
         {skipped && <Text style={styles.skipMark}>✕</Text>}
@@ -247,6 +291,7 @@ function Row({
             !checked && !current && styles.labelTodo,
             current && !checked && !skipped && styles.labelCurrent,
             skipped && styles.labelSkipped,
+            empty && styles.labelTodo,
           ]}
           numberOfLines={1}
         >
@@ -348,6 +393,7 @@ const styles = StyleSheet.create({
   checkDone: { backgroundColor: colors.pinkSoft, borderColor: colors.pinkSoft },
   checkMark: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.pinkDeep },
   checkSkipped: { backgroundColor: colors.backgroundAlt, borderColor: colors.borderStrong },
+  checkEmpty: { borderStyle: 'dashed', borderColor: colors.textLight },
   skipMark: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.textMuted },
   labelSkipped: { color: colors.textLight, textDecorationLine: 'line-through' },
   rowLabel: { flex: 1 },

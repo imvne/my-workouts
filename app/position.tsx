@@ -5,7 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
-import { sessionsOf, summarize, useProgramStore } from '@/store/programStore';
+import { fmtClock } from '@/components/workout/TimedExercise';
+import { formatOf } from '@/lib/formats';
+import { isTreated, sessionsOf, summarize, useProgramStore } from '@/store/programStore';
 
 export default function Position() {
   const router = useRouter();
@@ -15,8 +17,11 @@ export default function Position() {
   const program = useProgramStore((s) => s.program);
   const progress = useProgramStore((s) => s.progress);
   const done = useProgramStore((s) => s.done);
+  const skipped = useProgramStore((s) => s.skipped);
+  const results = useProgramStore((s) => s.results);
   const setProgress = useProgramStore((s) => s.setProgress);
   const setDone = useProgramStore((s) => s.setDone);
+  const setSkipped = useProgramStore((s) => s.setSkipped);
 
   const [openWeek, setOpenWeek] = useState<number | null>(progress.week - 1);
   const [openSession, setOpenSession] = useState<string | null>(null);
@@ -30,15 +35,16 @@ export default function Position() {
     );
   }
 
-  const allDone = (ids: string[]) => ids.length > 0 && ids.every((id) => done[id]);
+  const allDone = (ids: string[]) => ids.length > 0 && ids.every((id) => isTreated(id, done, skipped));
 
-  /** Position à reprendre : premier exo non coché dans l'ordre. */
-  const recompute = (nextDone: Record<string, true>) => {
+  /** Position à reprendre : premier exo ni fait ni « pas fait », dans l'ordre. */
+  const recompute = () => {
+    const { done: d, skipped: sk } = useProgramStore.getState();
     for (let wi = 0; wi < program.weeks.length; wi++) {
       const sessions = sessionsOf(program, wi + 1);
       for (let si = 0; si < sessions.length; si++) {
         for (let ei = 0; ei < sessions[si].exercises.length; ei++) {
-          if (!nextDone[sessions[si].exercises[ei].id]) {
+          if (!isTreated(sessions[si].exercises[ei].id, d, sk)) {
             return setProgress({ week: wi + 1, session: si, exercise: ei, set: 0 });
           }
         }
@@ -47,15 +53,21 @@ export default function Position() {
     setProgress({ week: program.weeks.length, session: 0, exercise: 0, set: 0 });
   };
 
+  /** Séance / semaine : tout coché ↔ tout décoché. */
   const toggle = (ids: string[]) => {
-    const value = !allDone(ids);
-    setDone(ids, value);
-    const next = { ...done };
-    for (const id of ids) {
-      if (value) next[id] = true;
-      else delete next[id];
-    }
-    recompute(next);
+    if (allDone(ids)) {
+      setDone(ids, false);
+      setSkipped(ids, false);
+    } else setDone(ids.filter((id) => !skipped[id]), true);
+    recompute();
+  };
+
+  /** Exo : vide → fait → pas fait → vide. */
+  const cycle = (id: string) => {
+    if (done[id]) setSkipped([id], true);
+    else if (skipped[id]) setSkipped([id], false);
+    else setDone([id], true);
+    recompute();
   };
 
   const currentSessions = sessionsOf(program, progress.week);
@@ -122,6 +134,8 @@ export default function Position() {
                         const eKey = `${sKey}-${ei}`;
                         const eOpen = openExercise === eKey;
                         const eDone = !!done[exercise.id];
+                        const eSkipped = !!skipped[exercise.id];
+                        const result = results[exercise.id];
                         const eCurrent =
                           progress.week === wi + 1 && progress.session === si && progress.exercise === ei;
 
@@ -132,15 +146,19 @@ export default function Position() {
                               sub={[
                                 summarize(exercise.reps) && `${summarize(exercise.reps)} reps`,
                                 summarize(exercise.loads),
+                                result?.finished &&
+                                  formatOf(exercise) !== 'emom' &&
+                                  `⏱ ${fmtClock(result.ms, true)}${result.reps ? ` · ${result.reps} reps` : ''}`,
                               ]
                                 .filter(Boolean)
                                 .join(' — ')}
                               checked={eDone}
+                              skipped={eSkipped}
                               current={eCurrent}
                               open={eOpen}
                               level={2}
                               onToggle={() => setOpenExercise(eOpen ? null : eKey)}
-                              onCheck={() => toggle([exercise.id])}
+                              onCheck={() => cycle(exercise.id)}
                             />
 
                             {eOpen && (
@@ -192,6 +210,7 @@ function Row({
   label,
   sub,
   checked,
+  skipped,
   current,
   open,
   level,
@@ -201,6 +220,7 @@ function Row({
   label: string;
   sub?: string;
   checked: boolean;
+  skipped?: boolean;
   current: boolean;
   open: boolean;
   level: 1 | 2;
@@ -215,16 +235,18 @@ function Row({
         accessibilityRole="checkbox"
         accessibilityState={{ checked }}
         accessibilityLabel={label}
-        style={[styles.check, checked && styles.checkDone]}
+        style={[styles.check, checked && styles.checkDone, skipped && styles.checkSkipped]}
       >
         {checked && <Text style={styles.checkMark}>✓</Text>}
+        {skipped && <Text style={styles.skipMark}>✕</Text>}
       </Pressable>
       <Pressable onPress={onToggle} style={styles.rowLabel}>
         <Text
           style={[
             level === 1 ? styles.labelL1 : styles.labelL2,
             !checked && !current && styles.labelTodo,
-            current && !checked && styles.labelCurrent,
+            current && !checked && !skipped && styles.labelCurrent,
+            skipped && styles.labelSkipped,
           ]}
           numberOfLines={1}
         >
@@ -325,6 +347,9 @@ const styles = StyleSheet.create({
   },
   checkDone: { backgroundColor: colors.pinkSoft, borderColor: colors.pinkSoft },
   checkMark: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.pinkDeep },
+  checkSkipped: { backgroundColor: colors.backgroundAlt, borderColor: colors.borderStrong },
+  skipMark: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.textMuted },
+  labelSkipped: { color: colors.textLight, textDecorationLine: 'line-through' },
   rowLabel: { flex: 1 },
   labelL1: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.text },
   labelL2: { fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text },

@@ -6,7 +6,7 @@ import { Stats } from '@/components/workout/Stats';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { beep, keepAwake, unlockAudio } from '@/lib/cues';
 import { emomInterval, formatOf, minutesIn, tabataTiming } from '@/lib/formats';
-import { valueFor } from '@/store/programStore';
+import { useProgramStore, valueFor, type TimerResult } from '@/store/programStore';
 import type { ProgramExercise } from '@/types/program';
 
 type Props = {
@@ -26,14 +26,13 @@ type Props = {
 };
 
 type Mode = 'emom' | 'tabata' | 'countdown' | 'stopwatch';
-const PREP_MS = 10_000;
 
 export const fmtClock = (ms: number, up = false) => {
   const total = Math.max(0, up ? Math.floor(ms / 1000) : Math.ceil(ms / 1000));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 };
 
-/** Chrono façon SmartWOD : préparation 10 s, gros chiffres, tours, phases effort / repos. */
+/** Chrono façon SmartWOD : préparation, gros chiffres, tours, phases effort / repos, résultat gardé. */
 export function TimedExercise({
   exercise,
   setIndex,
@@ -47,6 +46,10 @@ export function TimedExercise({
   onImmersiveChange,
   onTint,
 }: Props) {
+  const prepMs = useProgramStore((s) => s.settings.prepSeconds) * 1000;
+  const saved = useProgramStore((s) => s.results[exercise.id]);
+  const setResult = useProgramStore((s) => s.setResult);
+
   const format = formatOf(exercise);
   const minutes = minutesIn(exercise.name, ...exercise.reps);
   const sets = exercise.sets;
@@ -73,19 +76,23 @@ export function TimedExercise({
     if (format === 'fortime' && minutes) total = minutes * 60000; // time cap
   }
   const rounds = mode === 'emom' || mode === 'tabata';
+  const counter = !rounds; // For Time / AMRAP : on compte ses reps
+  const target = /^\d+$/.test((exercise.reps[0] ?? '').trim()) ? parseInt(exercise.reps[0], 10) : null;
 
   // Temps d'effort écoulé = cumul des segments précédents + segment en cours (hors préparation).
-  const [base, setBase] = useState(() => (rounds ? setIndex * interval : 0));
+  const [base, setBase] = useState(() => saved?.ms ?? (rounds ? setIndex * interval : 0));
   const [startAt, setStartAt] = useState<number | null>(null);
   const [prepEnd, setPrepEnd] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [count, setCount] = useState(() => saved?.reps ?? 0);
+  const [stopped, setStopped] = useState(() => !!saved?.finished); // « Terminé » (For Time)
   const [controls, setControls] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const running = startAt !== null;
   const inPrep = running && prepEnd !== null && now < prepEnd;
   const elapsed = base + (running ? Math.max(0, now - startAt) : 0);
-  const finished = elapsed >= total;
+  const finished = stopped || elapsed >= total;
 
   const round = rounds ? Math.min(Math.floor(elapsed / interval), sets - 1) : setIndex;
   const within = elapsed - round * interval;
@@ -93,11 +100,19 @@ export function TimedExercise({
 
   let display: number;
   if (inPrep) display = (prepEnd ?? 0) - now;
-  else if (mode === 'emom') display = (round + 1) * interval - elapsed;
-  else if (mode === 'tabata') display = phase === 'work' ? workMs - within : interval - within;
+  else if (finished && !rounds) display = Math.min(elapsed, total);
+  else if (mode === 'emom') display = finished ? 0 : (round + 1) * interval - elapsed;
+  else if (mode === 'tabata') display = finished ? 0 : phase === 'work' ? workMs - within : interval - within;
   else if (mode === 'countdown') display = total - elapsed;
   else display = elapsed;
-  const countingUp = !inPrep && mode === 'stopwatch';
+  const countingUp = !inPrep && (mode === 'stopwatch' || (finished && !rounds));
+
+  // Dernier état connu, pour l'enregistrer si on quitte l'écran en plein milieu.
+  const latest = useRef({ elapsed, count, finished });
+  latest.current = { elapsed, count, finished };
+
+  const save = (ms: number, reps: number, isFinished: boolean) =>
+    setResult(exercise.id, { ms, reps, finished: isFinished, at: Date.now() } satisfies TimerResult);
 
   useEffect(() => {
     if (!running) return;
@@ -139,15 +154,18 @@ export function TimedExercise({
     if (secondsLeft > 3) lastTick.current = null;
   }, [secondsLeft, running, countingUp]);
 
+  // Fin naturelle (EMOM, Tabata, AMRAP, time cap).
   useEffect(() => {
-    if (running && finished) {
+    if (running && elapsed >= total) {
       setBase(total);
       setStartAt(null);
       setPrepEnd(null);
+      save(total, latest.current.count, true);
       beep(990, 700);
       keepAwake(false);
     }
-  }, [running, finished, total]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, elapsed, total]);
 
   const immersive = running && !controls;
   useEffect(() => onImmersiveChange(immersive), [immersive, onImmersiveChange]);
@@ -157,17 +175,21 @@ export function TimedExercise({
 
   useEffect(
     () => () => {
+      // On quitte l'écran (Précédent, Passer…) : on garde où on en était.
+      const l = latest.current;
+      if (l.elapsed > 0 && !l.finished) save(l.elapsed, l.count, false);
       onImmersiveChange(false);
       onTint(null);
       keepAwake(false);
     },
-    [onImmersiveChange, onTint],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const reveal = () => {
     setControls(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setControls(false), 3500);
+    hideTimer.current = setTimeout(() => setControls(false), 5000);
   };
 
   const start = () => {
@@ -175,7 +197,7 @@ export function TimedExercise({
     keepAwake(true);
     const t = Date.now();
     // Préparation seulement au tout premier départ, pas à la reprise après pause.
-    const prep = elapsed === 0 ? PREP_MS : 0;
+    const prep = elapsed === 0 ? prepMs : 0;
     setNow(t);
     setPrepEnd(prep ? t + prep : null);
     setStartAt(t + prep);
@@ -188,6 +210,38 @@ export function TimedExercise({
     setPrepEnd(null);
     setControls(true);
     keepAwake(false);
+    save(elapsed, count, false);
+  };
+
+  /** « Terminé » (For Time / chrono libre) : on fige le temps et on l'enregistre. */
+  const stop = () => {
+    setBase(elapsed);
+    setStartAt(null);
+    setPrepEnd(null);
+    setStopped(true);
+    setControls(true);
+    keepAwake(false);
+    save(elapsed, count, true);
+    beep(990, 500);
+  };
+
+  const restart = () => {
+    setResult(exercise.id, null);
+    setBase(0);
+    setStartAt(null);
+    setPrepEnd(null);
+    setStopped(false);
+    setCount(0);
+    setControls(true);
+    if (rounds) onSetChange(0);
+  };
+
+  const bump = (delta: number) => {
+    setCount((c) => {
+      const n = Math.max(0, c + delta);
+      if (target && n === target && delta > 0) beep(990, 250);
+      return n;
+    });
   };
 
   const reps = valueFor(exercise.reps, round);
@@ -195,12 +249,21 @@ export function TimedExercise({
 
   let caption = '';
   if (inPrep) caption = 'Prêt ?';
+  else if (finished) caption = format === 'fortime' ? 'Ton temps' : 'Terminé';
   else if (mode === 'emom') caption = `${interval === 60000 ? 'Minute' : 'Tour'} ${round + 1} / ${sets}`;
   else if (mode === 'tabata') caption = `Round ${round + 1} / ${sets} · ${phase === 'work' ? 'Effort' : 'Repos'}`;
   else if (mode === 'countdown') caption = `AMRAP ${minutes} min`;
-  else caption = format === 'fortime' ? (minutes ? `For Time · cap ${minutes} min` : 'For Time') : 'Chrono';
+  else if (format === 'fortime') caption = minutes ? `For Time · cap ${minutes} min` : 'For Time';
+  else caption = format === 'amrap' ? 'AMRAP' : 'Chrono';
 
-  const clockColor = inPrep ? colors.textMuted : phase === 'rest' || finished ? colors.pinkDeep : colors.text;
+  const clockColor = inPrep
+    ? colors.textMuted
+    : finished
+      ? colors.pinkDeep
+      : phase === 'rest'
+        ? colors.pinkDeep
+        : colors.text;
+  const pct = target ? Math.min(1, count / target) : 0;
 
   return (
     <Pressable style={styles.root} onPress={running ? reveal : undefined}>
@@ -213,13 +276,53 @@ export function TimedExercise({
         </View>
 
         <Text style={[styles.clock, { color: clockColor }]}>{fmtClock(display, countingUp)}</Text>
-        <Text style={[styles.caption, phase === 'rest' && !inPrep && styles.captionRest]}>{caption}</Text>
+        <Text style={[styles.caption, (phase === 'rest' || finished) && !inPrep && styles.captionAccent]}>
+          {caption}
+        </Text>
 
         {rounds && (
           <View style={styles.roundDots}>
             {Array.from({ length: sets }, (_, i) => (
-              <View key={i} style={[styles.roundDot, i < round && styles.roundDotDone, i === round && styles.roundDotNow]} />
+              <View
+                key={i}
+                style={[
+                  styles.roundDot,
+                  (i < round || finished) && styles.roundDotDone,
+                  i === round && !finished && styles.roundDotNow,
+                ]}
+              />
             ))}
+          </View>
+        )}
+
+        {counter && (
+          <View style={styles.counter}>
+            <View style={styles.counterRow}>
+              <Pressable
+                onPress={() => bump(-1)}
+                hitSlop={8}
+                disabled={count === 0}
+                accessibilityLabel="Une rep de moins"
+                style={[styles.minus, count === 0 && styles.off]}
+              >
+                <Text style={styles.minusText}>−</Text>
+              </Pressable>
+              <View style={styles.countBox}>
+                <Text style={styles.count}>
+                  {count}
+                  {target ? <Text style={styles.countTarget}> / {target}</Text> : null}
+                </Text>
+                <Text style={styles.countLabel}>reps</Text>
+              </View>
+              <Pressable onPress={() => bump(1)} accessibilityLabel="Une rep de plus" style={styles.plus}>
+                <Text style={styles.plusText}>+</Text>
+              </Pressable>
+            </View>
+            {target && (
+              <View style={styles.track}>
+                <View style={[styles.fill, { width: `${pct * 100}%` }, pct >= 1 && styles.fillDone]} />
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -235,23 +338,22 @@ export function TimedExercise({
         )}
 
         {finished ? (
-          <Button title={finishLabel} onPress={onFinish} style={styles.mainBtn} />
+          <View style={styles.pair}>
+            <Button title="Recommencer" variant="ghost" onPress={restart} style={styles.flex} />
+            <Button title={finishLabel} onPress={onFinish} style={styles.flex} />
+          </View>
         ) : running ? (
           <View style={styles.pair}>
             <Button title="Pause" variant="ghost" onPress={pause} style={styles.flex} />
-            {!rounds && (
-              <Button
-                title="Terminé"
-                onPress={() => {
-                  pause();
-                  onFinish();
-                }}
-                style={styles.flex}
-              />
-            )}
+            {!rounds && <Button title="Terminé" onPress={stop} style={styles.flex} />}
+          </View>
+        ) : elapsed > 0 ? (
+          <View style={styles.pair}>
+            <Button title="Recommencer" variant="ghost" onPress={restart} style={styles.flex} />
+            <Button title="Reprendre" onPress={start} style={styles.flex} />
           </View>
         ) : (
-          <Button title={elapsed > 0 ? 'Reprendre' : 'Démarrer'} onPress={start} style={styles.mainBtn} />
+          <Button title="Démarrer" onPress={start} style={styles.mainBtn} />
         )}
 
         <View style={styles.subActions}>
@@ -270,6 +372,7 @@ export function TimedExercise({
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: 'space-between' },
   flex: { flex: 1 },
+  off: { opacity: 0.35 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   name: {
     fontFamily: fonts.displayBold,
@@ -280,23 +383,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   statsGap: { alignSelf: 'stretch', marginTop: spacing.lg },
-  badge: {
-    overflow: 'hidden',
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.pinkSoft,
-    color: colors.pinkDeep,
-    fontFamily: fonts.displayBold,
-    fontSize: 18,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.pill,
-  },
   clock: {
     marginTop: spacing.lg,
     fontFamily: fonts.displayBold,
-    fontSize: 112,
-    lineHeight: 120,
+    fontSize: 104,
+    lineHeight: 112,
     letterSpacing: -4,
     fontVariant: ['tabular-nums'],
   },
@@ -307,7 +398,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
-  captionRest: { color: colors.pinkDeep },
+  captionAccent: { color: colors.pinkDeep },
   roundDots: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -319,6 +410,48 @@ const styles = StyleSheet.create({
   roundDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
   roundDotDone: { backgroundColor: colors.pink },
   roundDotNow: { backgroundColor: colors.pinkDeep, width: 20 },
+
+  counter: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg },
+  counterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  minus: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  minusText: { fontFamily: fonts.bodyBold, fontSize: 24, color: colors.textMuted, lineHeight: 26 },
+  plus: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.pinkDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plusText: { fontFamily: fonts.bodyBold, fontSize: 36, color: colors.white, lineHeight: 38 },
+  countBox: { minWidth: 96, alignItems: 'center' },
+  count: {
+    fontFamily: fonts.displayBold,
+    fontSize: 40,
+    letterSpacing: -1,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  countTarget: { fontSize: 22, color: colors.textLight },
+  countLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    color: colors.textLight,
+    textTransform: 'uppercase',
+    letterSpacing: 1.4,
+  },
+  track: { width: '80%', maxWidth: 320, height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' },
+  fill: { height: 6, borderRadius: 3, backgroundColor: colors.pink },
+  fillDone: { backgroundColor: colors.pinkDeep },
+
   bottom: { gap: spacing.md },
   hidden: { opacity: 0 },
   nextBox: {

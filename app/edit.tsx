@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SaveButton } from '@/components/SaveButton';
 import { DownloadIcon } from '@/components/ui/DownloadIcon';
 import { DragList, Grip } from '@/components/ui/DragList';
 import { FormatPicker, FormatTag } from '@/components/ui/FormatPicker';
@@ -173,6 +174,7 @@ export default function EditProgram() {
       options={{
         headerRight: () => (
           <View style={styles.headerBtns}>
+            <SaveButton />
             <Pressable hitSlop={10} onPress={onImportFile} accessibilityLabel="Importer un CSV">
               <DownloadIcon direction="down" />
             </Pressable>
@@ -725,7 +727,7 @@ const ROW_H = 44;
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
-  headerBtns: { flexDirection: 'row', gap: spacing.md, marginRight: spacing.md },
+  headerBtns: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginRight: spacing.md },
   page: {
     width: '100%',
     maxWidth: 960,

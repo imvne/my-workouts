@@ -117,6 +117,7 @@ export default function RootLayout() {
         <Stack.Screen name="transfer" options={{ title: 'Sauvegarde & import' }} />
         <Stack.Screen name="position" options={{ title: 'Où j’en suis', presentation: 'modal' }} />
         <Stack.Screen name="library" options={{ title: 'Bibliothèque' }} />
+        <Stack.Screen name="settings" options={{ title: 'Réglages' }} />
         <Stack.Screen name="(athlete)" options={{ headerShown: false }} />
         <Stack.Screen name="(coach)" options={{ headerShown: false }} />
       </Stack>

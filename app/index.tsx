@@ -12,7 +12,10 @@ import { TimedExercise } from '@/components/workout/TimedExercise';
 import { formatOf, parseRest } from '@/lib/formats';
 import { groupBounds, nextStep, prevStep } from '@/lib/superset';
 import { signOut } from '@/lib/sync';
-import { sessionsOf, useProgramStore, valueFor } from '@/store/programStore';
+import { Dashboard } from '@/components/home/Dashboard';
+import { RecapIcon } from '@/components/ui/RecapIcon';
+import { SessionRecap } from '@/components/workout/SessionRecap';
+import { firstUntreated, isTreated, sessionsOf, useProgramStore, valueFor } from '@/store/programStore';
 
 export default function Home() {
   const router = useRouter();
@@ -22,6 +25,9 @@ export default function Home() {
   const setDone = useProgramStore((s) => s.setDone);
   const sessionStarted = useProgramStore((s) => s.sessionStarted);
   const startSession = useProgramStore((s) => s.startSession);
+  const setSkipped = useProgramStore((s) => s.setSkipped);
+  const markSessionStarted = useProgramStore((s) => s.markSessionStarted);
+  const defaultRest = useProgramStore((s) => s.settings.defaultRest);
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
@@ -30,6 +36,7 @@ export default function Home() {
   const [tint, setTint] = useState<string | null>(null);
   const onTint = useCallback((c: string | null) => setTint(c), []);
   const [rest, setRest] = useState<{ endAt: number; total: number } | null>(null);
+  const [recap, setRecap] = useState<{ week: number; sessionId: string } | null>(null);
   const endRest = useCallback(() => setRest(null), []);
 
   const headerLeft = () => (
@@ -44,6 +51,18 @@ export default function Home() {
     <Pressable hitSlop={12} onPress={() => router.push('/edit')} style={styles.editBtn}>
       <Text style={styles.editText}>{program ? 'Éditer' : 'Créer'}</Text>
     </Pressable>
+  );
+
+  const recapSession = recap
+    ? (program?.weeks[recap.week - 1]?.sessions.find((x) => x.id === recap.sessionId) ?? null)
+    : null;
+  const recapModal = (
+    <SessionRecap
+      visible={!!recapSession}
+      onClose={() => setRecap(null)}
+      week={recap?.week ?? 1}
+      session={recapSession}
+    />
   );
 
   const plainOptions = {
@@ -83,6 +102,19 @@ export default function Home() {
             )}
           </View>
 
+          {sessionStarted && (
+            <Pressable
+              onPress={() => {
+                setMenuOpen(false);
+                setRest(null);
+                // Retour à l'accueil : la séance reste en cours, « Reprendre » la relance.
+                setProgress(useProgramStore.getState().progress, false);
+              }}
+              style={styles.menuLink}
+            >
+              <Text style={styles.menuLinkText}>Accueil</Text>
+            </Pressable>
+          )}
           <Pressable
             onPress={() => {
               setMenuOpen(false);
@@ -109,6 +141,15 @@ export default function Home() {
             style={styles.menuLink}
           >
             <Text style={styles.menuLinkText}>Bibliothèque</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setMenuOpen(false);
+              router.push('/settings');
+            }}
+            style={styles.menuLink}
+          >
+            <Text style={styles.menuLinkText}>Réglages</Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -153,22 +194,57 @@ export default function Home() {
   const isLastSession = sessionIndex === sessions.length - 1;
   const isLastWeek = progress.week >= program.weeks.length;
 
-  const goToNextExercise = () => {
-    if (!isLastExercise) {
-      setProgress({ ...progress, session: sessionIndex, exercise: groupEnd + 1, set: 0 }, true);
-    } else if (!isLastSession) {
-      setProgress({ ...progress, session: sessionIndex + 1, exercise: 0, set: 0 });
-    } else if (!isLastWeek) {
-      setProgress({ week: progress.week + 1, session: 0, exercise: 0, set: 0 });
-    } else {
-      setProgress({ week: 1, session: 0, exercise: 0, set: 0 });
-    }
-  };
+  const groupIds = exercises.slice(groupStart, groupEnd + 1).map((e) => e.id);
+
+  const sessionHeaderRight = () => (
+    <View style={styles.headerRow}>
+      <Pressable
+        hitSlop={10}
+        onPress={() => setRecap({ week: progress.week, sessionId: session.id })}
+        accessibilityLabel="Récap de la séance"
+      >
+        <RecapIcon />
+      </Pressable>
+      {headerRight()}
+    </View>
+  );
 
   const startRest = () => {
-    // Superset : le repos est celui du dernier exo du groupe (sinon celui de l'exo en cours).
-    const seconds = parseRest(exercises[groupEnd].rest) || parseRest(current.rest);
+    // Superset : le repos est celui du dernier exo du groupe (sinon celui de l'exo, sinon le réglage).
+    const seconds =
+      parseRest(exercises[groupEnd].rest) || parseRest(current.rest) || parseRest(defaultRest);
     if (seconds > 0) setRest({ endAt: Date.now() + seconds * 1000, total: seconds * 1000 });
+  };
+
+  /**
+   * Suite : d'abord le prochain exo non traité de la séance en cours (après le groupe, puis
+   * ceux d'avant), sinon le premier non traité du bloc. On reste en séance si c'est la même.
+   */
+  const advance = (withRest: boolean) => {
+    const { done: d, skipped: sk } = useProgramStore.getState();
+    const order = [
+      ...exercises.keys(),
+    ].filter((i) => i > groupEnd).concat([...exercises.keys()].filter((i) => i < groupStart));
+    const here = order.find((i) => !isTreated(exercises[i].id, d, sk));
+    const target =
+      here !== undefined
+        ? { week: progress.week, session: sessionIndex, exercise: here, set: 0 }
+        : firstUntreated(program, d, sk);
+    if (!target) {
+      setRest(null);
+      setProgress({ week: program.weeks.length, session: 0, exercise: 0, set: 0 });
+      return;
+    }
+    const sameSession = target.week === progress.week && target.session === sessionIndex;
+    setProgress(target, sameSession);
+    if (withRest && sameSession) startRest();
+    else setRest(null);
+  };
+
+  /** « Passer » : exo (ou superset) marqué « pas fait », on n'y reviendra pas. */
+  const skipGroup = () => {
+    setSkipped(groupIds, true);
+    advance(false);
   };
 
   const goNext = () => {
@@ -177,9 +253,8 @@ export default function Home() {
       if (step.roundEnd) startRest(); // pas de repos entre A et B d'un superset
       return;
     }
-    setDone(exercises.slice(groupStart, groupEnd + 1).map((e) => e.id), true);
-    if (!isLastExercise) startRest();
-    goToNextExercise();
+    setDone(groupIds, true);
+    advance(true);
   };
 
   const goPrev = () => {
@@ -227,26 +302,17 @@ export default function Home() {
 
   if (!sessionStarted) {
     return (
-      <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+      <View style={[styles.screen, styles.dashboard, { paddingBottom: insets.bottom }]}>
         <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...plainOptions }} />
         {menu}
-        <View />
-        <View style={styles.intro}>
-          <Text style={styles.introWeek}>Semaine {progress.week}</Text>
-          <Text style={styles.introTitle} adjustsFontSizeToFit numberOfLines={2}>
-            {session.title}
-          </Text>
-          <Text style={styles.introMeta}>
-            {exercises.length} exo{exercises.length > 1 ? 's' : ''} ·{' '}
-            {exercises.reduce((n, e) => n + e.sets, 0)} séries
-          </Text>
-        </View>
-        <View style={styles.bottom}>
-          <Button title="Commencer la séance" onPress={startSession} style={styles.mainBtn} />
-          <Pressable onPress={() => router.push('/position')} hitSlop={8} style={styles.prev}>
-            <Text style={styles.prevText}>Changer de séance</Text>
-          </Pressable>
-        </View>
+        {recapModal}
+        <Dashboard
+          onStart={() => {
+            markSessionStarted(session.id);
+            startSession();
+          }}
+          onRecap={(week, sessionId) => setRecap({ week, sessionId })}
+        />
       </View>
     );
   }
@@ -275,16 +341,20 @@ export default function Home() {
   );
 
   // Fond de l'écran selon la phase (repos rose, préparation grise), header compris.
-  const phaseOptions = (color: string | null) =>
-    color ? { contentStyle: { backgroundColor: color }, headerStyle: { backgroundColor: color } } : {};
+  // Sans phase : on remet explicitement le blanc (les options d'écran se cumulent).
+  const phaseOptions = (color: string | null) => {
+    const bg = color ?? colors.background;
+    return { contentStyle: { backgroundColor: bg }, headerStyle: { backgroundColor: bg } };
+  };
 
   if (rest) {
     const upReps = valueFor(current.reps, setIndex);
     const upLoad = valueFor(current.loads, setIndex);
     return (
       <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
-        <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...phaseOptions(colors.pinkSoft) }} />
+        <Stack.Screen options={{ headerLeft, headerRight: sessionHeaderRight, headerShown: true, ...phaseOptions(colors.pinkSoft) }} />
         {menu}
+        {recapModal}
         <RestTimer
           endAt={rest.endAt}
           total={rest.total}
@@ -300,8 +370,11 @@ export default function Home() {
   if (timed) {
     return (
       <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
-        <Stack.Screen options={{ headerLeft, headerRight, headerShown: !immersive, ...phaseOptions(tint) }} />
+        <Stack.Screen
+          options={{ headerLeft, headerRight: sessionHeaderRight, headerShown: !immersive, ...phaseOptions(tint) }}
+        />
         {menu}
+        {recapModal}
         {top}
         <TimedExercise
           key={current.id}
@@ -312,12 +385,12 @@ export default function Home() {
           }
           onFinish={() => {
             setDone([current.id], true);
-            goToNextExercise();
+            advance(true);
           }}
           finishLabel={isLastExercise ? 'Séance terminée' : 'Exercice suivant'}
           onPrev={goPrev}
           canPrev={canGoPrev}
-          onSkip={goToNextExercise}
+          onSkip={skipGroup}
           nextHint={nextHint}
           onImmersiveChange={onImmersiveChange}
           onTint={onTint}
@@ -328,10 +401,11 @@ export default function Home() {
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+      {recapModal}
       <Stack.Screen
         options={{
           headerLeft,
-          headerRight,
+          headerRight: sessionHeaderRight,
           headerShown: true,
           contentStyle: { backgroundColor: colors.background },
           headerStyle: { backgroundColor: colors.background },
@@ -410,7 +484,7 @@ export default function Home() {
           <Pressable onPress={goPrev} disabled={!canGoPrev} hitSlop={10} style={!canGoPrev && styles.hidden}>
             <Text style={styles.prevText}>← Précédent</Text>
           </Pressable>
-          <Pressable onPress={goToNextExercise} hitSlop={10}>
+          <Pressable onPress={skipGroup} hitSlop={10}>
             <Text style={styles.prevText}>Passer →</Text>
           </Pressable>
         </View>
@@ -491,6 +565,8 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontFamily: fonts.displayBold, fontSize: 32, letterSpacing: -1, color: colors.text },
 
+  dashboard: { justifyContent: 'flex-start' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
   screen: {
     flex: 1,
     width: '100%',

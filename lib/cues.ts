@@ -1,6 +1,8 @@
 // Bips et écran allumé pendant un chrono (web uniquement ; ignoré ailleurs).
 import { Platform } from 'react-native';
 
+import { useProgramStore } from '@/store/programStore';
+
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
 let ctx: AudioContext | null = null;
 
@@ -18,6 +20,7 @@ export function unlockAudio() {
 }
 
 export function beep(freq = 880, ms = 160) {
+  if (!useProgramStore.getState().settings.sound) return;
   const c = audio();
   if (c) {
     const o = c.createOscillator();

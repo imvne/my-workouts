@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fmtClock } from '@/components/workout/TimedExercise';
 import { fonts, spacing } from '@/constants/theme';
 import { formatLabel, formatOf } from '@/lib/formats';
-import { summarize, useProgramStore } from '@/store/programStore';
+import { formatDuration, sessionDuration, summarize, useProgramStore } from '@/store/programStore';
 import type { ProgramSession } from '@/types/program';
 
 // Palette du récap : pensé pour être posé sur une photo (story), donc blanc + rose clair.
@@ -15,10 +15,6 @@ const FAINT = 'rgba(255,255,255,0.35)';
 const PINK = '#F7A8BE';
 const SHADOW = { textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 10, textShadowOffset: { width: 0, height: 1 } };
 
-function duration(ms: number) {
-  const min = Math.round(ms / 60000);
-  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
-}
 
 /** Récap plein écran de la séance, exportable en PNG transparent pour une story. */
 export function SessionRecap({
@@ -45,7 +41,8 @@ export function SessionRecap({
   const doneCount = exercises.filter((e) => done[e.id]).length;
   const setsCount = exercises.filter((e) => done[e.id]).reduce((n, e) => n + e.sets, 0);
   const l = log[session.id];
-  const ms = l?.startedAt ? (l.finishedAt ?? Date.now()) - l.startedAt : 0;
+  // Chrono de séance arrêté, sinon 1 h 45 si finie, sinon le temps écoulé depuis le lancement.
+  const ms = sessionDuration(l) ?? (l?.startedAt ? Date.now() - l.startedAt : 0);
   const date = new Date(l?.finishedAt ?? l?.startedAt ?? Date.now()).toLocaleDateString('fr-FR', {
     weekday: 'short',
     day: 'numeric',
@@ -105,7 +102,7 @@ export function SessionRecap({
             <View style={styles.stats}>
               <Stat value={`${doneCount}/${exercises.length}`} label="exos" />
               <Stat value={String(setsCount)} label="séries" />
-              <Stat value={ms > 0 ? duration(ms) : '—'} label="durée" />
+              <Stat value={ms > 0 ? formatDuration(ms) : '—'} label="durée" />
             </View>
 
             <View style={styles.list}>

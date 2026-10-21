@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { RestTimer } from '@/components/workout/RestTimer';
+import { HeaderClock, SessionEnd, SessionReady } from '@/components/workout/SessionClock';
 import { Stats } from '@/components/workout/Stats';
 import { fmtClock } from '@/components/workout/TimedExercise';
 import { TimedExercise } from '@/components/workout/TimedExercise';
@@ -26,7 +27,9 @@ export default function Home() {
   const sessionStarted = useProgramStore((s) => s.sessionStarted);
   const startSession = useProgramStore((s) => s.startSession);
   const setSkipped = useProgramStore((s) => s.setSkipped);
-  const markSessionStarted = useProgramStore((s) => s.markSessionStarted);
+  const beginSession = useProgramStore((s) => s.beginSession);
+  const endSession = useProgramStore((s) => s.endSession);
+  const sessionLog = useProgramStore((s) => s.log);
   const defaultRest = useProgramStore((s) => s.settings.defaultRest);
   const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -37,6 +40,13 @@ export default function Home() {
   const onTint = useCallback((c: string | null) => setTint(c), []);
   const [rest, setRest] = useState<{ endAt: number; total: number } | null>(null);
   const [recap, setRecap] = useState<{ week: number; sessionId: string } | null>(null);
+  // Séance choisie mais chrono pas encore lancé (écran flou « Lancer la séance »).
+  const [ready, setReady] = useState<string | null>(null);
+  // Écran de fin : le chrono tourne jusqu'à « Arrêter la séance ». `next` = où aller ensuite.
+  const [ending, setEnding] = useState<{
+    next: { week: number; session: number; exercise: number; set: number } | null;
+    allDone: boolean;
+  } | null>(null);
   const endRest = useCallback(() => setRest(null), []);
 
   const headerLeft = () => (
@@ -115,6 +125,18 @@ export default function Home() {
               <Text style={styles.menuLinkText}>Accueil</Text>
             </Pressable>
           )}
+          {sessionStarted && (
+            <Pressable
+              onPress={() => {
+                setMenuOpen(false);
+                setRest(null);
+                setEnding({ next: null, allDone: false });
+              }}
+              style={styles.menuLink}
+            >
+              <Text style={styles.menuLinkText}>Terminer la séance</Text>
+            </Pressable>
+          )}
           <Pressable
             onPress={() => {
               setMenuOpen(false);
@@ -180,6 +202,26 @@ export default function Home() {
     );
   }
 
+  const readySession = ready ? sessions.find((x) => x.id === ready) : undefined;
+  if (readySession && !sessionStarted) {
+    return (
+      <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <Stack.Screen options={{ headerLeft, headerRight, headerShown: true, ...plainOptions }} />
+        {menu}
+        <SessionReady
+          week={progress.week}
+          session={readySession}
+          onStart={() => {
+            beginSession(readySession.id);
+            startSession();
+            setReady(null);
+          }}
+          onCancel={() => setReady(null)}
+        />
+      </View>
+    );
+  }
+
   if (!sessionStarted || sessions.length === 0) {
     return (
       <View style={[styles.screen, styles.dashboard, { paddingBottom: insets.bottom }]}>
@@ -188,8 +230,10 @@ export default function Home() {
         {recapModal}
         <Dashboard
           onStart={(_target, sessionId) => {
-            markSessionStarted(sessionId);
-            startSession();
+            const l = useProgramStore.getState().log[sessionId];
+            // Chrono déjà lancé et pas arrêté : on reprend directement.
+            if (l?.startedAt && !l.endedAt) startSession();
+            else setReady(sessionId);
           }}
           onRecap={(week, sessionId) => setRecap({ week, sessionId })}
         />
@@ -214,6 +258,11 @@ export default function Home() {
   const isLastWeek = progress.week >= program.weeks.length;
 
   const groupIds = exercises.slice(groupStart, groupEnd + 1).map((e) => e.id);
+
+  const clockOptions = {
+    headerTitle: () => <HeaderClock startedAt={sessionLog[session.id]?.endedAt ? undefined : sessionLog[session.id]?.startedAt} />,
+    headerTitleAlign: 'center' as const,
+  };
 
   const sessionHeaderRight = () => (
     <View style={styles.headerRow}>
@@ -249,15 +298,27 @@ export default function Home() {
       here !== undefined
         ? { week: progress.week, session: sessionIndex, exercise: here, set: 0 }
         : firstUntreated(program, d, sk);
-    if (!target) {
+    const sameSession = !!target && target.week === progress.week && target.session === sessionIndex;
+    if (!sameSession) {
+      // Séance finie : écran de fin avec le chrono, on part seulement après « Arrêter ».
       setRest(null);
-      setProgress({ week: program.weeks.length, session: 0, exercise: 0, set: 0 });
+      setEnding({ next: target, allDone: true });
       return;
     }
-    const sameSession = target.week === progress.week && target.session === sessionIndex;
-    setProgress(target, sameSession);
-    if (withRest && sameSession) startRest();
+    setProgress(target, true);
+    if (withRest) startRest();
     else setRest(null);
+  };
+
+  const stopSession = () => {
+    endSession(session.id);
+    const next = ending?.next;
+    setEnding(null);
+    if (ending?.allDone) {
+      setProgress(next ?? { week: program.weeks.length, session: 0, exercise: 0, set: 0 });
+    } else {
+      setProgress(useProgramStore.getState().progress, false); // arrêt en cours de route
+    }
   };
 
   /** « Passer » : exo (ou superset) marqué « pas fait », on n'y reviendra pas. */
@@ -350,12 +411,29 @@ export default function Home() {
     return { contentStyle: { backgroundColor: bg }, headerStyle: { backgroundColor: bg } };
   };
 
+  if (ending) {
+    return (
+      <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <Stack.Screen options={{ headerLeft, headerRight: sessionHeaderRight, headerShown: true, headerTitle: '', ...phaseOptions(null) }} />
+        {menu}
+        {recapModal}
+        <SessionEnd
+          session={session}
+          startedAt={sessionLog[session.id]?.startedAt}
+          allDone={ending.allDone}
+          onStop={stopSession}
+          onBack={ending.allDone ? undefined : () => setEnding(null)}
+        />
+      </View>
+    );
+  }
+
   if (rest) {
     const upReps = valueFor(current.reps, setIndex);
     const upLoad = valueFor(current.loads, setIndex);
     return (
       <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
-        <Stack.Screen options={{ headerLeft, headerRight: sessionHeaderRight, headerShown: true, ...phaseOptions(colors.pinkSoft) }} />
+        <Stack.Screen options={{ headerLeft, headerRight: sessionHeaderRight, headerShown: true, ...clockOptions, ...phaseOptions(colors.pinkSoft) }} />
         {menu}
         {recapModal}
         <RestTimer
@@ -374,7 +452,7 @@ export default function Home() {
     return (
       <View style={[styles.screen, { paddingBottom: insets.bottom + spacing.xl }]}>
         <Stack.Screen
-          options={{ headerLeft, headerRight: sessionHeaderRight, headerShown: !immersive, ...phaseOptions(tint) }}
+          options={{ headerLeft, headerRight: sessionHeaderRight, headerShown: !immersive, ...clockOptions, ...phaseOptions(tint) }}
         />
         {menu}
         {recapModal}
@@ -410,6 +488,7 @@ export default function Home() {
           headerLeft,
           headerRight: sessionHeaderRight,
           headerShown: true,
+          ...clockOptions,
           contentStyle: { backgroundColor: colors.background },
           headerStyle: { backgroundColor: colors.background },
         }}
@@ -427,9 +506,11 @@ export default function Home() {
           {current.name}
         </Text>
 
-        <View style={styles.statsBlock}>
-          <Stats reps={reps} load={load} />
-        </View>
+        {(!!reps || !!load) && (
+          <View style={styles.statsBlock}>
+            <Stats reps={reps} load={load} />
+          </View>
+        )}
 
         <Text style={styles.setCaption}>
           Série <Text style={styles.setCaptionNow}>{setIndex + 1}</Text> / {current.sets}

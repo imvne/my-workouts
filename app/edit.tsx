@@ -30,6 +30,8 @@ import {
   newProgram,
   newSession,
   copyPreviousWeekSession,
+  formatDuration,
+  sessionDuration,
   previousWeekSession,
   seriesToText,
   textToSeries,
@@ -95,6 +97,7 @@ export default function EditProgram() {
   const done = useProgramStore((s) => s.done);
   const importProgram = useProgramStore((s) => s.importProgram);
   const library = useProgramStore((s) => s.library);
+  const sessionLog = useProgramStore((s) => s.log);
   const [nameFocus, setNameFocus] = useState<string | null>(null); // exo dont on tape le nom
   // Ordi : une ligne de tableur par exo (+ navigation à gauche si assez large).
   // Téléphone : nom au-dessus, chiffres dessous.
@@ -281,6 +284,9 @@ export default function EditProgram() {
                           onChangeText={(title) => commit((p) => mapSession(p, wi, si, (x) => ({ ...x, title })))}
                           style={styles.sessionTitle}
                         />
+                        {!!sessionDuration(sessionLog[s.id]) && (
+                          <Text style={styles.duration}>⏱ {formatDuration(sessionDuration(sessionLog[s.id])!)}</Text>
+                        )}
                         <Text style={styles.count}>{s.exercises.filter((e) => e.name.trim()).length}</Text>
                         <MenuBtn
                           open={menu === sessionKey}
@@ -922,6 +928,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
   },
+  duration: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.pinkDeep },
   count: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.textLight, paddingHorizontal: spacing.xs },
 
   row: {

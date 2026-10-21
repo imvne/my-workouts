@@ -7,7 +7,14 @@ import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { fmtClock } from '@/components/workout/TimedExercise';
 import { formatOf } from '@/lib/formats';
-import { isTreated, sessionsOf, summarize, useProgramStore } from '@/store/programStore';
+import {
+  formatDuration,
+  isTreated,
+  sessionDuration,
+  sessionsOf,
+  summarize,
+  useProgramStore,
+} from '@/store/programStore';
 
 export default function Position() {
   const router = useRouter();
@@ -19,6 +26,7 @@ export default function Position() {
   const done = useProgramStore((s) => s.done);
   const skipped = useProgramStore((s) => s.skipped);
   const results = useProgramStore((s) => s.results);
+  const log = useProgramStore((s) => s.log);
   const setProgress = useProgramStore((s) => s.setProgress);
   const setDone = useProgramStore((s) => s.setDone);
   const setSkipped = useProgramStore((s) => s.setSkipped);
@@ -150,6 +158,7 @@ export default function Position() {
                   <View key={session.id}>
                     <Row
                       label={session.title}
+                      sub={sessionDuration(log[session.id]) ? `⏱ ${formatDuration(sessionDuration(log[session.id])!)}` : undefined}
                       checked={allDone(sessionIds)}
                       current={progress.week === wi + 1 && progress.session === si}
                       open={sOpen}

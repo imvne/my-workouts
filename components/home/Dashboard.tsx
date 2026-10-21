@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import {
   copyPreviousWeekSession,
+  formatDuration,
+  sessionDuration,
   isTreated,
   previousWeekSession,
   nextWeekStart,
@@ -19,13 +21,6 @@ type Status = 'done' | 'skipped' | 'partial' | 'todo' | 'empty';
 /** Une séance du bloc telle qu'affichée : `si` = rang parmi les séances jouables (null si vide). */
 type Slot = { week: number; session: ProgramSession; si: number | null };
 
-const MAX_SESSION_MS = 4 * 3600_000;
-
-function formatDuration(ms: number) {
-  const min = Math.round(ms / 60000);
-  if (min < 60) return `${min} min`;
-  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
-}
 
 /** Accueil : prochaine séance, suivi du bloc en points, chiffres de la semaine. */
 export function Dashboard({
@@ -99,13 +94,12 @@ export function Dashboard({
   const unlock = prevFinished && !weekStarted && prevEnd ? nextWeekStart(prevEnd, settings.weekStartDay) : null;
   const locked = !!unlock && Date.now() < unlock.getTime() && !force;
 
-  // Chiffres de la semaine en cours.
-  const weekDone = sessions.filter((s) => statusOf(s) === 'done').length;
-  const weekMs = sessions.reduce((ms, s) => {
-    const l = log[s.id];
-    return l?.startedAt && l?.finishedAt ? ms + Math.min(MAX_SESSION_MS, l.finishedAt - l.startedAt) : ms;
-  }, 0);
-  const weekSets = sessions.reduce(
+  // Chiffres de la semaine en cours (celle qu'on vient de finir tant que la suivante n'a pas commencé).
+  const statsWeek = locked ? week - 1 : week;
+  const statsSessions = sessionsOf(program, statsWeek);
+  const weekDone = statsSessions.filter((s) => statusOf(s) === 'done').length;
+  const weekMs = statsSessions.reduce((ms, s) => ms + (sessionDuration(log[s.id]) ?? 0), 0);
+  const weekSets = statsSessions.reduce(
     (n, s) => n + s.exercises.filter((e) => done[e.id]).reduce((m, e) => m + e.sets, 0),
     0,
   );
@@ -245,9 +239,9 @@ export function Dashboard({
 
       {/* Semaine en chiffres */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Cette semaine</Text>
+        <Text style={styles.sectionTitle}>Semaine {statsWeek}</Text>
         <View style={styles.tiles}>
-          <Tile value={`${weekDone}/${sessions.length}`} label="séances" />
+          <Tile value={`${weekDone}/${statsSessions.length}`} label="séances" />
           <Tile value={weekMs ? formatDuration(weekMs) : '—'} label="d'entraînement" />
           <Tile value={String(weekSets)} label="séries" />
         </View>

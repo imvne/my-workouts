@@ -160,7 +160,27 @@ export const DEFAULT_SETTINGS: Settings = { weekStartDay: 1, prepSeconds: 10, so
 /** Résultat d'un chrono (For Time, AMRAP, EMOM…), gardé pour y revenir. */
 export type TimerResult = { ms: number; reps: number; finished: boolean; at: number };
 
-export type SessionLog = { startedAt?: number; finishedAt?: number };
+/**
+ * Journal d'une séance : `startedAt`/`endedAt` = chrono de séance (« Lancer » / « Arrêter »),
+ * `finishedAt` = date où tous ses exos ont été traités.
+ */
+export type SessionLog = { startedAt?: number; endedAt?: number; finishedAt?: number };
+
+/** Durée retenue pour une séance finie sans chrono de séance. */
+export const DEFAULT_SESSION_MS = 105 * 60_000; // 1 h 45
+
+/** Durée d'une séance : chrono si lancé et arrêté, sinon 1 h 45 si elle est finie, sinon rien. */
+export function sessionDuration(log: SessionLog | undefined): number | null {
+  if (log?.startedAt && log.endedAt) return Math.max(0, log.endedAt - log.startedAt);
+  if (log?.finishedAt) return DEFAULT_SESSION_MS;
+  return null;
+}
+
+export function formatDuration(ms: number): string {
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
+}
 
 type ProgramState = {
   program: Program | null;
@@ -185,6 +205,10 @@ type ProgramState = {
   setSkipped: (ids: string[], value: boolean) => void;
   setResult: (id: string, result: TimerResult | null) => void;
   markSessionStarted: (sessionId: string) => void;
+  /** Lance le chrono de séance (repart de zéro). */
+  beginSession: (sessionId: string) => void;
+  /** Arrête le chrono de séance. */
+  endSession: (sessionId: string) => void;
   updateSettings: (patch: Partial<Settings>) => void;
   addLibraryItem: (item: Omit<LibraryItem, 'id'>) => void;
   updateLibraryItem: (id: string, patch: Partial<LibraryItem>) => void;
@@ -259,7 +283,7 @@ function refreshLog(
       const all = ids.every((id) => isTreated(id, done, skipped));
       const entry = next[s.id] ?? {};
       if (all && !entry.finishedAt) next[s.id] = { ...entry, finishedAt: now };
-      if (!all && entry.finishedAt) next[s.id] = { startedAt: entry.startedAt };
+      if (!all && entry.finishedAt) next[s.id] = { startedAt: entry.startedAt, endedAt: entry.endedAt };
     }
   }
   return next;
@@ -412,6 +436,16 @@ export const useProgramStore = create<ProgramState>()(
           state.log[sessionId]?.startedAt
             ? {}
             : { log: { ...state.log, [sessionId]: { ...state.log[sessionId], startedAt: Date.now() } } },
+        ),
+      beginSession: (sessionId) =>
+        set((state) => ({
+          log: { ...state.log, [sessionId]: { finishedAt: state.log[sessionId]?.finishedAt, startedAt: Date.now() } },
+        })),
+      endSession: (sessionId) =>
+        set((state) =>
+          state.log[sessionId]?.startedAt
+            ? { log: { ...state.log, [sessionId]: { ...state.log[sessionId], endedAt: Date.now() } } }
+            : {},
         ),
       updateSettings: (patch) => set((state) => ({ settings: { ...state.settings, ...patch } })),
     }),

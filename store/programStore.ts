@@ -45,6 +45,42 @@ export function cloneWeek(w: ProgramWeek): ProgramWeek {
   return { id: createId('w'), sessions: w.sessions.map(cloneSession) };
 }
 
+const isDefaultTitle = (t: string) => /^\s*s[ée]ance\s*\d*\s*$/i.test(t);
+
+/** Séance équivalente la semaine d'avant : même titre, sinon même position. */
+export function previousWeekSession(program: Program, wi: number, sessionId: string): ProgramSession | null {
+  if (wi <= 0) return null;
+  const current = program.weeks[wi]?.sessions ?? [];
+  const index = current.findIndex((s) => s.id === sessionId);
+  const target = current[index];
+  const prev = program.weeks[wi - 1]?.sessions ?? [];
+  if (!target) return null;
+  const key = target.title.trim().toLowerCase();
+  const match = (!isDefaultTitle(target.title) && prev.find((s) => s.title.trim().toLowerCase() === key)) || prev[index];
+  return match && match.exercises.some((e) => e.name.trim()) ? match : null;
+}
+
+/** Remplace les exos d'une séance par une copie de la séance de la semaine d'avant. */
+export function copyPreviousWeekSession(program: Program, wi: number, sessionId: string): Program | null {
+  const src = previousWeekSession(program, wi, sessionId);
+  if (!src) return null;
+  const copy = cloneSession(src);
+  return {
+    weeks: program.weeks.map((w, i) =>
+      i !== wi
+        ? w
+        : {
+            ...w,
+            sessions: w.sessions.map((s) =>
+              s.id === sessionId
+                ? { ...s, title: isDefaultTitle(s.title) ? src.title : s.title, exercises: copy.exercises }
+                : s,
+            ),
+          },
+    ),
+  };
+}
+
 /** Valeur d'une série : commune s'il n'y en a qu'une, sinon celle de la série (ou la dernière). */
 export function valueFor(values: string[] | undefined, setIndex: number): string {
   const arr = (values ?? []).map((v) => v.trim());

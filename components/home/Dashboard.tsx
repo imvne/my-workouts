@@ -5,7 +5,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '@/components/ui/Button';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import {
+  copyPreviousWeekSession,
   isTreated,
+  previousWeekSession,
   nextWeekStart,
   sessionsOf,
   useProgramStore,
@@ -42,6 +44,7 @@ export function Dashboard({
   const log = useProgramStore((s) => s.log);
   const settings = useProgramStore((s) => s.settings);
   const setProgress = useProgramStore((s) => s.setProgress);
+  const saveProgram = useProgramStore((s) => s.saveProgram);
   const [force, setForce] = useState(false);
 
   const statusOf = (session: ProgramSession): Status => {
@@ -162,7 +165,22 @@ export function Dashboard({
               {session.title}
             </Text>
             <Text style={styles.meta}>Aucun exercice pour l’instant.</Text>
-            <Button title="Programmer la séance" onPress={() => router.push('/edit')} style={styles.cta} />
+            {previousWeekSession(program, week - 1, session.id) && (
+              <Button
+                title={`Copier la semaine ${week - 1}`}
+                onPress={() => {
+                  const next = copyPreviousWeekSession(program, week - 1, session.id);
+                  if (next) saveProgram(next);
+                }}
+                style={styles.cta}
+              />
+            )}
+            <Button
+              title="Programmer la séance"
+              variant={previousWeekSession(program, week - 1, session.id) ? 'ghost' : 'primary'}
+              onPress={() => router.push('/edit')}
+              style={styles.cta}
+            />
           </>
         ) : session ? (
           <>

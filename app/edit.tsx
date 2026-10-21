@@ -29,6 +29,8 @@ import {
   newExercise,
   newProgram,
   newSession,
+  copyPreviousWeekSession,
+  previousWeekSession,
   seriesToText,
   textToSeries,
   useProgramStore,
@@ -76,6 +78,12 @@ const mapExercise = (
 ) => mapExercises(p, wi, si, (list) => list.map((e) => (e.id === id ? fn(e) : e)));
 
 const titleKey = (t: string) => t.trim().toLowerCase();
+
+/** Confirmation avant d'écraser une séance / semaine déjà remplie. */
+function confirmReplace(message: string): boolean {
+  if (Platform.OS === 'web') return window.confirm(message);
+  return true;
+}
 const fmtKeyOf = (id: string) => `f:${id}`;
 
 export default function EditProgram() {
@@ -224,6 +232,17 @@ export default function EditProgram() {
                 <Actions
                   items={[
                     {
+                      label: 'Copier la semaine précédente',
+                      disabled: wi === 0,
+                      onPress: () => {
+                        const hasContent = w.sessions.some((x) => x.exercises.some((e) => e.name.trim()));
+                        if (hasContent && !confirmReplace(`Remplacer la semaine ${wi + 1} par la semaine ${wi} ?`)) return;
+                        commit((p) => ({
+                          weeks: p.weeks.map((x, i) => (i === wi ? { ...cloneWeek(p.weeks[wi - 1]), id: x.id } : x)),
+                        }));
+                      },
+                    },
+                    {
                       label: 'Dupliquer',
                       onPress: () => commit((p) => ({ weeks: insertAfter(p.weeks, wi, cloneWeek(w)) })),
                     },
@@ -271,6 +290,15 @@ export default function EditProgram() {
                       {menu === sessionKey && (
                         <Actions
                           items={[
+                            {
+                              label: 'Copier la semaine précédente',
+                              disabled: !previousWeekSession(program, wi, s.id),
+                              onPress: () => {
+                                const hasContent = s.exercises.some((e) => e.name.trim());
+                                if (hasContent && !confirmReplace(`Remplacer « ${s.title} » par la semaine ${wi} ?`)) return;
+                                commit((p) => copyPreviousWeekSession(p, wi, s.id) ?? p);
+                              },
+                            },
                             {
                               label: 'Dupliquer',
                               onPress: () =>
